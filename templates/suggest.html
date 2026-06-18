@@ -1,0 +1,88 @@
+{{define "title"}}Suggest Media — {{.Data.DisplayName}}{{end}}
+{{define "content"}}
+{{$train := .Data}}
+<div class="container">
+  <div class="page-header">
+    <nav style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem">
+      <a href="/corridors/{{$train.CorridorSlug}}">{{$train.CorridorName}}</a> ›
+      <a href="/trains/{{$train.Slug}}">{{$train.DisplayName}}</a> › Suggest
+    </nav>
+    <h1>Suggest a Photo or Video</h1>
+    <p class="subtitle">Found a great image or video of {{$train.DisplayName}}? Share it for review.</p>
+  </div>
+  {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+  <form method="post" action="/trains/{{$train.Slug}}/suggest" class="suggest-form">
+    <div class="form-group form-honeypot" aria-hidden="true">
+      <label class="form-label">Website</label>
+      <input class="form-input" type="text" name="website" autocomplete="off" tabindex="-1">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="url">URL *</label>
+      <div style="display:flex;gap:.5rem">
+        <input class="form-input" type="url" id="url" name="url" required placeholder="https://www.youtube.com/watch?v=..." style="flex:1">
+        <button type="button" class="btn btn-secondary" id="yt-search-btn" style="white-space:nowrap">🔍 YouTube</button>
+      </div>
+      <div class="form-hint">Accepted: YouTube, Vimeo, Flickr, Imgur, RailPictures.net, RRPictureArchives.net</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="title">Title (optional)</label>
+      <input class="form-input" type="text" id="title" name="title" maxlength="120" placeholder="Brief description">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="comment">Comment (optional)</label>
+      <textarea class="form-textarea" id="comment" name="comment" rows="3" maxlength="500" placeholder="Anything you'd like the reviewer to know about this link…"></textarea>
+    </div>
+    <div id="video-tags" style="display:none;margin-bottom:1rem">
+      <p class="form-label" style="margin-bottom:.5rem">Video features <span style="color:var(--muted);font-size:.85rem">(optional)</span></p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem .75rem">
+        <p style="font-size:.75rem;font-weight:600;color:var(--muted);margin:0;grid-column:1/-1">Rarities</p>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="long_consist"> Long consist</label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="doubleheader"> Doubleheader</label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="sandwich_set"> Sandwich set</label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="reverse_set"> Reverse set</label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="scenic"> Scenic</label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="environment"> Environment</label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="historic"> Historic</label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="special_event"> Special event</label>
+        <p style="font-size:.75rem;font-weight:600;color:var(--muted);margin:.4rem 0 0;grid-column:1/-1">Highlights</p>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="blow_overs"> Blow overs</label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="horn_show"> Horn show</label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.9rem"><input type="checkbox" name="tags" value="doppler"> Doppler</label>
+      </div>
+    </div>
+    <input type="hidden" name="a" id="f_a">
+    <input type="hidden" name="b" id="f_b">
+    <button type="submit" class="btn btn-primary">Submit Suggestion</button>
+    <a href="/trains/{{$train.Slug}}" class="btn btn-secondary" style="margin-left:.5rem">Cancel</a>
+  </form>
+  <p style="margin-top:2rem;font-size:.85rem;color:var(--muted)">
+    Submissions are reviewed before appearing on the site. Only links from the listed domains are accepted.
+  </p>
+</div>
+<script>
+document.getElementById('yt-search-btn').addEventListener('click', function() {
+  window.open('https://www.youtube.com/results?search_query=' + encodeURIComponent('{{$train.DisplayName}}'), '_blank');
+});
+</script>
+<script>document.getElementById('f_b').value='k';</script>
+<script>(function(){var e=document.getElementById('f_b');e.value='o'+e.value;}());</script>
+<script>
+(function() {
+  var loadTime = Date.now();
+  var urlInput = document.getElementById('url');
+  var tagsDiv = document.getElementById('video-tags');
+  var videoPattern = /youtube\.com|youtu\.be|vimeo\.com/i;
+  function update() {
+    tagsDiv.style.display = videoPattern.test(urlInput.value) ? '' : 'none';
+    if (tagsDiv.style.display === 'none') {
+      tagsDiv.querySelectorAll('input[type=checkbox]').forEach(function(c) { c.checked = false; });
+    }
+  }
+  urlInput.addEventListener('input', update);
+  urlInput.addEventListener('change', update);
+  document.querySelector('.suggest-form').addEventListener('submit', function(e) {
+    if (Date.now() - loadTime < 2000) { e.preventDefault(); }
+  });
+})();
+</script>
+{{end}}

@@ -1,0 +1,51 @@
+{{define "title"}}Create an account — {{siteName}}{{end}}
+{{define "content"}}
+<div class="container" style="max-width:440px;padding:2.5rem 1rem 4rem">
+  <h1 style="font-size:1.6rem;font-weight:800;margin-bottom:.5rem">Create an account</h1>
+  <p style="opacity:.75;font-size:.95rem;margin-bottom:1.5rem">
+    Register to have your photo and video submissions tracked under your name.
+    An email address is optional — confirmation helps an admin trust your account but is never required.
+  </p>
+  {{if .Flash}}<div class="flash" style="margin-bottom:1rem;padding:.6rem .8rem;border-radius:6px;background:#fef3c7;color:#92400e">{{.Flash}}</div>{{end}}
+  <form method="post" action="/register" class="register-form" style="display:flex;flex-direction:column;gap:1rem">
+    <div class="form-group form-honeypot" aria-hidden="true" style="position:absolute;left:-9999px">
+      <label class="form-label">Website</label>
+      <input class="form-input" type="text" name="website" autocomplete="off" tabindex="-1">
+    </div>
+    <label style="display:flex;flex-direction:column;gap:.3rem;font-size:.9rem">
+      Username
+      <input name="username" type="text" required minlength="3" maxlength="30" autocomplete="username"
+        style="padding:.55rem .7rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit">
+    </label>
+    <label style="display:flex;flex-direction:column;gap:.3rem;font-size:.9rem">
+      Email <span style="opacity:.6">(optional)</span>
+      <input name="email" type="email" autocomplete="email"
+        style="padding:.55rem .7rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit">
+    </label>
+    <label style="display:flex;flex-direction:column;gap:.3rem;font-size:.9rem">
+      Password
+      <input name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters"
+        style="padding:.55rem .7rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit">
+    </label>
+    <label style="display:flex;flex-direction:column;gap:.3rem;font-size:.9rem">
+      Confirm password
+      <input name="confirm_password" type="password" required minlength="8" autocomplete="new-password"
+        style="padding:.55rem .7rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit">
+    </label>
+    <input type="hidden" name="a" id="f_a">
+    <input type="hidden" name="b" id="f_b">
+    <button type="submit" class="btn btn-primary" style="padding:.6rem;border-radius:6px;border:none;background:#1e3a5f;color:#fff;font-weight:600;cursor:pointer">Create account</button>
+  </form>
+  <p style="margin-top:1.25rem;font-size:.9rem;opacity:.8">Already have an account? <a href="/login">Log in</a>.</p>
+</div>
+<script>document.getElementById('f_b').value='k';</script>
+<script>(function(){var e=document.getElementById('f_b');e.value='o'+e.value;}());</script>
+<script>
+(function() {
+  var loadTime = Date.now();
+  document.querySelector('.register-form').addEventListener('submit', function(e) {
+    if (Date.now() - loadTime < 2000) { e.preventDefault(); }
+  });
+})();
+</script>
+{{end}}

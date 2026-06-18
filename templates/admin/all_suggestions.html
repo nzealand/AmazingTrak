@@ -1,0 +1,108 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+<div style="margin-bottom:.75rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+  <a href="{{.AdminPrefix}}/suggestions" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter ""}} btn-primary{{end}}">All</a>
+  <a href="{{.AdminPrefix}}/suggestions?status=pending" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter "pending"}} btn-primary{{end}}">Pending</a>
+  <a href="{{.AdminPrefix}}/suggestions?status=approved" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter "approved"}} btn-primary{{end}}">Approved</a>
+  <a href="{{.AdminPrefix}}/suggestions?status=rejected" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter "rejected"}} btn-primary{{end}}">Rejected</a>
+  <span style="color:var(--border);margin:0 .25rem">|</span>
+  <form method="post" action="{{.AdminPrefix}}/suggestions/approve-all-pending" onsubmit="return confirm('Approve all pending submissions?')">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="btn btn-sm btn-primary" type="submit">Approve All Pending</button>
+  </form>
+  <form method="post" action="{{.AdminPrefix}}/suggestions/reject-all-pending" onsubmit="return confirm('Reject all pending submissions?')">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="btn btn-sm btn-danger" type="submit">Reject All Pending</button>
+  </form>
+  <form method="post" action="{{.AdminPrefix}}/suggestions/delete-all-rejected" onsubmit="return confirm('Permanently delete all rejected submissions?')">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="btn btn-sm btn-danger" type="submit">Delete All Rejected</button>
+  </form>
+</div>
+{{if $d.Suggestions}}
+<table class="admin-table">
+  <thead><tr><th>Train</th><th>Title</th><th>URL</th><th>Type</th><th>Comment</th><th>Status</th><th>Submitted</th><th style="width:22%">Actions</th></tr></thead>
+  <tbody>
+    {{range $d.Suggestions}}
+    <tr>
+      <td><a href="{{$.AdminPrefix}}/trains/{{.TrainID}}/media">{{.TrainName}}</a></td>
+      <td style="max-width:200px;font-size:.85rem">{{if .Title}}{{truncate .Title 80}}{{else}}<span style="color:var(--muted)">—</span>{{end}}</td>
+      <td style="max-width:240px;word-break:break-all"><a href="{{.URL}}" target="_blank" rel="noopener">{{truncate .URL 50}}</a></td>
+      <td>{{mediaLabel .MediaType}}</td>
+      <td style="max-width:180px;font-size:.85rem;color:var(--muted)">{{if .Caption}}{{truncate .Caption 80}}{{else}}—{{end}}</td>
+      <td>
+        <span class="status-badge status-{{.Status}}">{{.StatusLabel}}</span>
+        {{if .AutoApproved}}<br><span style="font-size:.7rem;color:#f59e0b;font-weight:600">⚡ auto</span>{{end}}
+      </td>
+      <td style="font-size:.8rem;color:var(--muted)">{{.CreatedAt}}</td>
+      <td>
+        {{if eq .Status "pending"}}
+        <div style="display:flex;gap:.3rem;align-items:flex-start;flex-wrap:wrap">
+          <form method="post" action="{{$.AdminPrefix}}/suggestions/{{.ID}}/approve">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-primary" type="submit">Approve</button>
+          </form>
+          <div class="split-btn" style="display:flex">
+            <form method="post" action="{{$.AdminPrefix}}/suggestions/{{.ID}}/reject">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn btn-sm btn-danger" type="submit" style="border-radius:4px 0 0 4px;border-right:1px solid rgba(255,255,255,.25)">Reject</button>
+            </form>
+            <div style="position:relative">
+              <button type="button" class="btn btn-sm btn-danger" style="border-radius:0 4px 4px 0;padding:0 .45rem" onclick="toggleSpamMenu(this)">▾</button>
+              <div class="spam-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:2px;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;white-space:nowrap;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.15)">
+                <form method="post" action="{{$.AdminPrefix}}/suggestions/{{.ID}}/spam" onsubmit="return confirm(‘Mark as spam? This may cascade to the submitter account.’)">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <button type="submit" style="display:block;width:100%;text-align:left;padding:.4rem .75rem;background:none;border:none;cursor:pointer;font-size:.82rem;color:var(--text)">🚫 Mark as Spam</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+        <form method="post" action="{{$.AdminPrefix}}/suggestions/{{.ID}}/edit" style="margin-top:.4rem;display:flex;flex-direction:column;gap:.25rem;max-width:240px">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input class="form-input" type="text" name="title" value="{{.Title}}" placeholder="Title…" style="font-size:.78rem;padding:.3rem .5rem">
+          <textarea class="form-textarea" name="caption" rows="2" placeholder="Comment…" style="font-size:.78rem;padding:.3rem .5rem;resize:vertical">{{.Caption}}</textarea>
+          {{if eq .MediaType "video"}}
+          <div style="display:flex;flex-direction:column;gap:.15rem">
+            <label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" name="tags" value="long_consist" {{if hasTags .Tags "long_consist"}}checked{{end}}> Long consist</label>
+            <label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" name="tags" value="doubleheader" {{if hasTags .Tags "doubleheader"}}checked{{end}}> Doubleheader</label>
+            <label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" name="tags" value="sandwich_set" {{if hasTags .Tags "sandwich_set"}}checked{{end}}> Sandwich set</label>
+            <label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" name="tags" value="reverse_set" {{if hasTags .Tags "reverse_set"}}checked{{end}}> Reverse set</label>
+            <label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" name="tags" value="scenic" {{if hasTags .Tags "scenic"}}checked{{end}}> Scenic</label>
+            <label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" name="tags" value="environment" {{if hasTags .Tags "environment"}}checked{{end}}> Environment</label>
+            <label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" name="tags" value="historic" {{if hasTags .Tags "historic"}}checked{{end}}> Historic</label>
+            <label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" name="tags" value="special_event" {{if hasTags .Tags "special_event"}}checked{{end}}> Special event</label>
+          </div>
+          {{end}}
+          <button class="btn btn-sm btn-secondary" type="submit">Save title/comment/rarities</button>
+        </form>
+        {{else if eq .Status "approved"}}
+        <form method="post" action="{{$.AdminPrefix}}/suggestions/{{.ID}}/unapprove" onsubmit="return confirm(‘Unapprove this suggestion and remove its media?’)">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="btn btn-sm btn-secondary" type="submit">Unapprove</button>
+        </form>
+        {{else}}
+        {{if .RejectionReason}}<span style="font-size:.8rem;color:var(--muted)">{{.RejectionReason}}</span>{{end}}
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p style="color:var(--muted);padding:2rem 0">No suggestions{{if $d.StatusFilter}} with status "{{$d.StatusFilter}}"{{end}}.</p>
+{{end}}
+<script>
+function toggleSpamMenu(btn) {
+  var menu = btn.nextElementSibling;
+  var isOpen = menu.style.display !== 'none';
+  document.querySelectorAll('.spam-menu').forEach(function(m) { m.style.display = 'none'; });
+  if (!isOpen) menu.style.display = 'block';
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.split-btn')) {
+    document.querySelectorAll('.spam-menu').forEach(function(m) { m.style.display = 'none'; });
+  }
+});
+</script>
+{{end}}

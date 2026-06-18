@@ -1,0 +1,114 @@
+{{define "admin_content"}}
+<div style="margin-bottom:1.25rem;display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+  <form method="post" action="{{.AdminPrefix}}/corridors/new" style="display:flex;gap:.5rem;align-items:center;flex:1">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input class="form-input" type="text" name="name" placeholder="New corridor name" required style="max-width:250px">
+    <input class="form-input" type="text" name="region" placeholder="Region (optional)" style="max-width:160px">
+    <button class="btn btn-primary btn-sm" type="submit">+ Add Corridor</button>
+  </form>
+  <form method="post" action="{{.AdminPrefix}}/corridors/sync-schedule-urls" onsubmit="return confirm('Fetch Amtrak schedule URLs from route data and populate any corridors that are missing one?')">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="btn btn-sm btn-secondary" type="submit">Sync Amtrak Schedule URLs</button>
+  </form>
+  <form method="post" action="{{.AdminPrefix}}/corridors/delete-inactive" onsubmit="return confirm('Permanently delete all deactivated corridors, their trains, and all associated media?')">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="btn btn-sm btn-danger" type="submit">Delete All Deactivated</button>
+  </form>
+</div>
+<table class="admin-table" id="corridor-table">
+  <thead>
+    <tr>
+      <th data-sort="name" style="cursor:pointer">Name <span class="sort-ind">⬍</span></th>
+      <th data-sort="region" style="cursor:pointer">Region <span class="sort-ind">⬍</span></th>
+      <th data-sort="trains" style="cursor:pointer">Trains <span class="sort-ind">⬍</span></th>
+      <th data-sort="media" style="cursor:pointer">Media <span class="sort-ind">⬍</span></th>
+      <th data-sort="thumb" style="cursor:pointer">Thumb <span class="sort-ind">⬍</span></th>
+      <th data-sort="hero" style="cursor:pointer">Hero <span class="sort-ind">⬍</span></th>
+      <th data-sort="status" style="cursor:pointer">Status <span class="sort-ind">⬍</span></th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody id="corridor-tbody">
+    {{range .Data}}
+    <tr class="{{if not .IsActive}}inactive-row{{end}}"
+        data-name="{{.Name}}"
+        data-region="{{.Region}}"
+        data-trains="{{.TrainCount}}"
+        data-media="{{.MediaCount}}"
+        data-thumb="{{if .ThumbnailMediaID.Valid}}1{{else}}0{{end}}"
+        data-hero="{{if .HeroMediaID.Valid}}1{{else}}0{{end}}"
+        data-status="{{if .IsActive}}1{{else}}0{{end}}">
+      <td><a href="{{$.AdminPrefix}}/corridors/{{.ID}}">{{.Name}}</a></td>
+      <td>{{.Region}}</td>
+      <td>{{.TrainCount}}</td>
+      <td>{{.MediaCount}}</td>
+      <td>{{if .ThumbnailMediaID.Valid}}<span style="color:#16a34a">✓</span>{{else}}<span style="color:#dc2626;font-weight:700">✗</span>{{end}}</td>
+      <td>{{if .HeroMediaID.Valid}}<span style="color:#16a34a">✓</span>{{else}}<span style="color:#dc2626;font-weight:700">✗</span>{{end}}</td>
+      <td>{{if .IsActive}}Active{{else}}Inactive{{end}}</td>
+      <td>
+        <div class="btn-group">
+          <a href="{{$.AdminPrefix}}/corridors/{{.ID}}" class="btn btn-sm btn-secondary">Edit</a>
+          <a href="{{$.AdminPrefix}}/corridors/{{.ID}}/media" class="btn btn-sm btn-secondary">Media</a>
+          <form method="post" action="{{$.AdminPrefix}}/corridors/{{.ID}}/toggle">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-secondary" type="submit">{{if .IsActive}}Deactivate{{else}}Activate{{end}}</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+<script>
+(function() {
+  var tbody = document.getElementById('corridor-tbody');
+  var headers = document.querySelectorAll('#corridor-table th[data-sort]');
+  var sortCol = null, sortDir = 1;
+  var numericCols = {trains:1, media:1, thumb:1, hero:1, status:1};
+
+  function getRows() { return Array.from(tbody.querySelectorAll('tr')); }
+
+  function applySort(col, dir) {
+    var rows = getRows();
+    var numeric = !!numericCols[col];
+    rows.sort(function(a, b) {
+      var av = a.getAttribute('data-' + col) || '';
+      var bv = b.getAttribute('data-' + col) || '';
+      return numeric ? (parseFloat(av) - parseFloat(bv)) * dir : av.localeCompare(bv) * dir;
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+    headers.forEach(function(th) {
+      var ind = th.querySelector('.sort-ind');
+      if (ind) ind.textContent = th.dataset.sort === col ? (dir === 1 ? '▲' : '▼') : '⬍';
+    });
+  }
+
+  function defaultSort() {
+    var rows = getRows();
+    rows.sort(function(a, b) {
+      var am = parseInt(a.getAttribute('data-media')) || 0;
+      var bm = parseInt(b.getAttribute('data-media')) || 0;
+      if (am !== bm) return am - bm;
+      var at = parseInt(a.getAttribute('data-thumb')) || 0;
+      var bt = parseInt(b.getAttribute('data-thumb')) || 0;
+      if (at !== bt) return at - bt;
+      var ah = parseInt(a.getAttribute('data-hero')) || 0;
+      var bh = parseInt(b.getAttribute('data-hero')) || 0;
+      return ah - bh;
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+  }
+
+  headers.forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col = th.dataset.sort;
+      sortDir = sortCol === col ? -sortDir : 1;
+      sortCol = col;
+      applySort(col, sortDir);
+    });
+  });
+
+  defaultSort();
+})();
+</script>
+{{end}}

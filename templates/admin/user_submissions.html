@@ -1,0 +1,51 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+<p style="margin-bottom:1rem"><a href="{{.AdminPrefix}}/users">← Back to users</a></p>
+<p style="margin-bottom:1.25rem;color:var(--muted)">
+  Submissions by <strong>{{$d.User.Username}}</strong> ({{$d.User.StatusLabel}}).
+  Rare submissions are preserved if this user is deleted.
+</p>
+
+{{if $d.Submissions}}
+<table class="admin-table">
+  <thead><tr><th>Train</th><th>Title</th><th>URL</th><th>Type</th><th>Tags</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead>
+  <tbody>
+    {{range $d.Submissions}}
+    <tr>
+      <td><a href="{{$.AdminPrefix}}/trains/{{.TrainID}}/media">{{.TrainName}}</a></td>
+      <td style="max-width:200px;font-size:.85rem">{{if .Title}}{{truncate .Title 80}}{{else}}<span style="color:var(--muted)">—</span>{{end}}</td>
+      <td style="max-width:240px;word-break:break-all"><a href="{{.URL}}" target="_blank" rel="noopener">{{truncate .URL 50}}</a></td>
+      <td>{{mediaLabel .MediaType}}</td>
+      <td style="font-size:.8rem;color:var(--muted)">{{range $i,$t := videoTags .Tags}}{{if $i}}, {{end}}{{$t}}{{end}}{{if not (videoTags .Tags)}}—{{end}}</td>
+      <td>
+        <span class="status-badge status-{{.Status}}">{{.Status}}</span>
+        {{if .AutoApproved}}<br><span style="font-size:.7rem;color:#f59e0b;font-weight:600">⚡ auto</span>{{end}}
+      </td>
+      <td style="font-size:.8rem;color:var(--muted)">{{.CreatedAt}}</td>
+      <td>
+        {{if eq .Status "pending"}}
+        <div class="btn-group">
+          <form method="post" action="{{$.AdminPrefix}}/suggestions/{{.ID}}/approve">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-primary" type="submit">Approve</button>
+          </form>
+          <form method="post" action="{{$.AdminPrefix}}/suggestions/{{.ID}}/reject">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-danger" type="submit">Reject</button>
+          </form>
+        </div>
+        {{else if eq .Status "approved"}}
+        <form method="post" action="{{$.AdminPrefix}}/suggestions/{{.ID}}/unapprove" onsubmit="return confirm('Unapprove this suggestion and remove its media?')">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="btn btn-sm btn-danger" type="submit">Unapprove</button>
+        </form>
+        {{else}}{{.Status}}{{if .RejectionReason}}: {{.RejectionReason}}{{end}}{{end}}
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p style="color:var(--muted);padding:2rem 0">This user has no submissions.</p>
+{{end}}
+{{end}}

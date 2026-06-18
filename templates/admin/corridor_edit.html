@@ -1,0 +1,87 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+<div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
+  <a href="{{.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media" class="btn btn-secondary">Manage Media</a>
+  <a href="/corridors/{{$d.Corridor.Slug}}" target="_blank" class="btn btn-secondary">View Public Page ↗</a>
+</div>
+
+<form method="post" action="{{.AdminPrefix}}/corridors/{{$d.Corridor.ID}}" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input class="form-input" type="text" name="name" value="{{$d.Corridor.Name}}" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Slug *</label>
+      <input class="form-input" type="text" name="slug" value="{{$d.Corridor.Slug}}" required>
+      <div class="form-hint">URL: /corridors/{slug}</div>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label">Region <span style="font-size:.8rem;color:var(--muted)">(editable text, e.g. California)</span></label>
+    <input class="form-input" type="text" name="region" value="{{$d.Corridor.Region}}" placeholder="e.g. California">
+  </div>
+
+  <div class="form-group">
+    <label class="form-label">Description</label>
+    <textarea class="form-textarea" name="description" rows="4">{{$d.Corridor.Description}}</textarea>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">On-time % <span style="font-size:.8rem;color:var(--muted)">(optional)</span></label>
+      <input class="form-input" type="number" name="on_time_percent" min="0" max="100" step="0.1"
+        value="{{if $d.Corridor.OnTimePercent.Valid}}{{fmtFloatN $d.Corridor.OnTimePercent}}{{end}}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Hero Train <span style="font-size:.8rem;color:var(--muted)">(shown on listings)</span></label>
+      <select class="form-select" name="hero_train_id">
+        <option value="0">— None —</option>
+        {{range $d.Trains}}
+        <option value="{{.ID}}" {{if eq $d.Corridor.HeroTrainID.Int64 .ID}}selected{{end}}>{{.DisplayName}}</option>
+        {{end}}
+      </select>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label">Service Quality Summary <span style="font-size:.8rem;color:var(--muted)">(optional)</span></label>
+    <textarea class="form-textarea" name="service_quality_summary" rows="3">{{$d.Corridor.ServiceQualitySummary}}</textarea>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label">Amtrak Schedule URL <span style="font-size:.8rem;color:var(--muted)">(optional)</span></label>
+    <input class="form-input" type="url" name="schedule_url" value="{{$d.Corridor.ScheduleURL}}" placeholder="https://www.amtrak.com/...">
+    <div class="form-hint">Shown on the corridor page and map popup.</div>
+  </div>
+
+  <div class="btn-group" style="margin-top:.5rem">
+    <button class="btn btn-primary" type="submit">Save Changes</button>
+    <a href="{{.AdminPrefix}}/corridors" class="btn btn-secondary">Back to Corridors</a>
+  </div>
+</form>
+
+{{if $d.Trains}}
+<h3 class="section-heading" style="margin-top:2rem">Trains in this Corridor</h3>
+<table class="admin-table">
+  <thead><tr><th>#</th><th>Display Name</th><th>Direction</th><th>Media</th><th>Actions</th></tr></thead>
+  <tbody>
+    {{range $d.Trains}}
+    <tr class="{{if not .IsActive}}inactive-row{{end}}">
+      <td>{{.TrainNumber}}</td>
+      <td><a href="{{$.AdminPrefix}}/trains/{{.ID}}">{{.DisplayName}}</a></td>
+      <td>{{.Direction}}</td>
+      <td>{{.MediaCount}}</td>
+      <td>
+        <a href="{{$.AdminPrefix}}/trains/{{.ID}}" class="btn btn-sm btn-secondary">Edit</a>
+        <a href="{{$.AdminPrefix}}/trains/{{.ID}}/media" class="btn btn-sm btn-secondary">Media</a>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{end}}

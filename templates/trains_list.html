@@ -1,0 +1,77 @@
+{{define "title"}}Trains — {{siteName}}{{end}}
+{{define "content"}}
+<div style="background:linear-gradient(135deg,#1e3a5f,#0a1628);color:#fff;padding:2rem 2rem">
+  <div class="container">
+    <h1 style="font-size:1.8rem;font-weight:800">Amtrak Trains</h1>
+    <p style="margin-top:.4rem;opacity:.8;font-size:.95rem">All active trains across every corridor.</p>
+  </div>
+</div>
+<div class="container" style="padding-top:1.25rem;padding-bottom:3rem">
+  <div style="background:var(--card-bg);border:1px solid var(--border);border-left:3px solid #f59e0b;border-radius:.375rem;padding:.65rem 1rem;margin-bottom:1.25rem;font-size:.85rem;line-height:1.5">
+    <strong>★ Best video</strong> — hand-curated by our editors for the most impressive footage: rare consists (doubleheaders, sandwich sets, reverse sets), exceptional locations, dramatic moments like blow-overs or Doppler effects. The best video always plays first on each train's page.
+  </div>
+  <div style="overflow-x:auto">
+    <table id="trains-table" style="width:100%;border-collapse:collapse;font-size:.88rem">
+      <thead>
+        <tr>
+          <th data-sort="num" data-numeric="1" style="text-align:left;padding:.55rem .75rem;border-bottom:2px solid var(--border);font-weight:600;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;width:4rem;cursor:pointer;user-select:none"># <span class="si">⬍</span></th>
+          <th data-sort="name" style="text-align:left;padding:.55rem .75rem;border-bottom:2px solid var(--border);font-weight:600;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;user-select:none">Train <span class="si">⬍</span></th>
+          <th data-sort="corridor" style="text-align:left;padding:.55rem .75rem;border-bottom:2px solid var(--border);font-weight:600;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;user-select:none">Corridor <span class="si">⬍</span></th>
+          <th data-sort="videos" data-numeric="1" style="text-align:center;padding:.55rem .75rem;border-bottom:2px solid var(--border);font-weight:600;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;user-select:none">Videos <span class="si">⬍</span></th>
+          <th data-sort="best" data-numeric="1" style="text-align:center;padding:.55rem .75rem;border-bottom:2px solid var(--border);font-weight:600;color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;user-select:none">Best <span class="si">⬍</span></th>
+        </tr>
+      </thead>
+      <tbody id="trains-tbody">
+        {{range .Data}}
+        <tr style="border-bottom:1px solid var(--border)"
+            data-num="{{.TrainNumber}}"
+            data-name="{{.DisplayName}}"
+            data-corridor="{{.CorridorName}}"
+            data-videos="{{.VideoCount}}"
+            data-best="{{if .HasBestVideo}}1{{else}}0{{end}}">
+          <td style="padding:.55rem .75rem;color:var(--muted);font-variant-numeric:tabular-nums">{{if .TrainNumber}}{{.TrainNumber}}{{else}}—{{end}}</td>
+          <td style="padding:.55rem .75rem"><a href="/trains/{{.Slug}}" style="font-weight:500">{{.DisplayName}}</a></td>
+          <td style="padding:.55rem .75rem"><a href="/corridors/{{.CorridorSlug}}" style="color:var(--muted);font-size:.85rem">{{.CorridorName}}</a></td>
+          <td style="padding:.55rem .75rem;text-align:center;color:var(--muted)">{{if gt .VideoCount 0}}{{.VideoCount}}{{else}}—{{end}}</td>
+          <td style="padding:.55rem .75rem;text-align:center">
+            {{if .HasBestVideo}}<span style="display:inline-block;background:#fef3c7;color:#92400e;border-radius:999px;padding:.1rem .5rem;font-size:.75rem;font-weight:600;white-space:nowrap">★ Best</span>{{else}}<span style="color:var(--border)">—</span>{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+<script>
+(function() {
+  var tbody = document.getElementById('trains-tbody');
+  var headers = document.querySelectorAll('#trains-table th[data-sort]');
+  var sortCol = null, sortDir = 1;
+
+  function sort(col, dir) {
+    var numeric = !!document.querySelector('th[data-sort="' + col + '"][data-numeric]');
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a, b) {
+      var av = a.dataset[col] || '';
+      var bv = b.dataset[col] || '';
+      if (numeric) return (parseFloat(av) - parseFloat(bv)) * dir;
+      return av.localeCompare(bv) * dir;
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+    headers.forEach(function(th) {
+      var ind = th.querySelector('.si');
+      if (ind) ind.textContent = th.dataset.sort === col ? (dir === 1 ? '▲' : '▼') : '⬍';
+    });
+  }
+
+  headers.forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col = th.dataset.sort;
+      sortDir = sortCol === col ? -sortDir : 1;
+      sortCol = col;
+      sort(col, sortDir);
+    });
+  });
+})();
+</script>
+{{end}}

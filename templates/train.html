@@ -1,0 +1,305 @@
+{{define "title"}}{{.Data.Train.DisplayName}} — {{siteName}}{{end}}
+{{define "head"}}
+{{$d := .Data}}
+{{$pageURL := printf "%s/trains/%s" baseURL $d.Train.Slug}}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="{{siteName}}">
+<meta property="og:title" content="{{$d.Train.DisplayName}} — {{siteName}}">
+<meta property="og:url" content="{{$pageURL}}">
+<meta property="og:locale" content="en_US">
+{{if $d.HeroMedia}}
+<meta property="og:image" content="{{absURL $d.HeroMedia.PublicURL}}">
+<meta property="og:image:secure_url" content="{{absURL $d.HeroMedia.PublicURL}}">
+<meta property="og:image:alt" content="{{$d.Train.DisplayName}}">
+{{end}}
+{{if $d.BestVideo}}<meta property="og:video" content="{{$d.BestVideo.URL}}">{{end}}
+{{$desc := $d.Train.DisplayName}}
+{{if $d.Train.CorridorName}}{{$desc = printf "%s on the %s" $desc $d.Train.CorridorName}}{{end}}
+{{if $d.Rarities}}{{$desc = printf "%s —" $desc}}{{range $i,$r := $d.Rarities}}{{if $i}}{{$desc = printf "%s ·" $desc}}{{end}}{{$desc = printf "%s %s %s (%d)" $desc $r.Emoji $r.Label $r.Count}}{{end}}{{end}}
+{{if $d.BestVideo}}{{$desc = printf "%s — best video by %s" $desc $d.BestVideo.Contributor}}{{else if not $d.Rarities}}{{$desc = printf "%s — photos, videos and route info" $desc}}{{end}}
+<meta property="og:description" content="{{$desc}}">
+<meta name="twitter:card" content="{{if $d.HeroMedia}}summary_large_image{{else}}summary{{end}}">
+<meta name="twitter:title" content="{{$d.Train.DisplayName}} — {{siteName}}">
+<meta name="twitter:description" content="{{$desc}}">
+{{if $d.HeroMedia}}
+<meta name="twitter:image" content="{{absURL $d.HeroMedia.PublicURL}}">
+<meta name="twitter:image:alt" content="{{$d.Train.DisplayName}}">
+{{end}}
+{{if trainHasGeo .Data.Train}}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css">
+{{end}}
+{{end}}
+{{define "content"}}
+{{$d := .Data}}
+{{$pageURL := printf "%s/trains/%s" baseURL $d.Train.Slug}}
+
+{{if $d.HeroMedia}}
+<div class="hero-banner">
+  <img src="{{$d.HeroMedia.PublicURL}}" alt="{{$d.Train.DisplayName}}">
+  <div class="hero-overlay">
+    <h1>{{$d.Train.DisplayName}}</h1>
+    <div class="subtitle"><a href="/corridors/{{$d.Train.CorridorSlug}}" style="color:#fff">{{$d.Train.CorridorName}}</a></div>
+    {{if $d.HeroMedia.Caption}}<div class="hero-caption">{{$d.HeroMedia.Caption}}</div>{{end}}
+  </div>
+</div>
+{{else}}
+<div style="background:linear-gradient(135deg,#1e3a5f,#0a1628);padding:2.5rem 2rem;color:#fff">
+  <div class="container">
+    <nav style="font-size:.85rem;opacity:.75;margin-bottom:.5rem">
+      <a href="/corridors" style="color:#fff">Corridors</a> ›
+      <a href="/corridors/{{$d.Train.CorridorSlug}}" style="color:#fff">{{$d.Train.CorridorName}}</a> ›
+      {{$d.Train.DisplayName}}
+    </nav>
+    <h1 style="font-size:2rem;font-weight:700">{{$d.Train.DisplayName}}</h1>
+  </div>
+</div>
+{{end}}
+
+<div class="container" style="padding-top:1.5rem">
+  {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+
+  {{if $d.HeroMedia}}
+  <nav style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">
+    <a href="/corridors">Corridors</a> ›
+    <a href="/corridors/{{$d.Train.CorridorSlug}}">{{$d.Train.CorridorName}}</a> ›
+    <a href="/trains/{{$d.Train.Slug}}">{{$d.Train.DisplayName}}</a>
+  </nav>
+  {{end}}
+
+  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:1.25rem">
+    <dl class="train-meta" style="margin:0;flex:1;min-width:0">
+    <div>
+      <dt>Corridor</dt>
+      <dd><a href="/corridors/{{$d.Train.CorridorSlug}}">{{$d.Train.CorridorName}}</a></dd>
+    </div>
+    {{if $d.Train.TrainNumber}}
+    <div>
+      <dt>Train Number</dt>
+      <dd>{{$d.Train.TrainNumber}}</dd>
+    </div>
+    <div>
+      <dt>Live Status</dt>
+      <dd><a href="{{transitdocsURL $d.Train.TrainNumber | safeURL}}" target="_blank" rel="noopener">Track on TransitDocs →</a></dd>
+    </div>
+    {{end}}
+    {{if $d.Train.Direction}}
+    <div>
+      <dt>Direction</dt>
+      <dd>{{$d.Train.Direction}}</dd>
+    </div>
+    {{end}}
+  </dl>
+    <div style="display:flex;gap:.4rem;align-items:center;flex-shrink:0;flex-wrap:wrap">
+      <span style="font-size:.82rem;color:var(--muted)">Share:</span>
+      <a class="btn btn-sm btn-secondary" target="_blank" rel="noopener" title="Share on Reddit"
+        href="https://www.reddit.com/submit?url={{$pageURL | urlquery}}&title={{printf "%s — %s" $d.Train.DisplayName siteName | urlquery}}">Reddit</a>
+      <a class="btn btn-sm btn-secondary" target="_blank" rel="noopener" title="Share on X"
+        href="https://twitter.com/intent/tweet?url={{$pageURL | urlquery}}&text={{printf "%s — %s" $d.Train.DisplayName siteName | urlquery}}">X</a>
+      <a class="btn btn-sm btn-secondary" target="_blank" rel="noopener" title="Share on Facebook"
+        href="https://www.facebook.com/sharer/sharer.php?u={{$pageURL | urlquery}}">Facebook</a>
+      <button type="button" class="btn btn-sm btn-secondary" id="copy-link-btn" data-url="{{$pageURL}}">Copy Link</button>
+    </div>
+  </div>
+
+  {{if $d.Train.Notes}}
+  <p style="color:var(--muted);margin-bottom:1.5rem">{{$d.Train.Notes}}</p>
+  {{end}}
+
+  {{if trainHasGeo $d.Train}}
+  <div id="hero-map"
+    data-lat="{{heroLat $d.Train}}"
+    data-lon="{{heroLon $d.Train}}">
+  </div>
+  <p style="font-size:.8rem;color:var(--muted);margin-bottom:1.5rem">
+    📍 Photo location: {{heroLat $d.Train}}, {{heroLon $d.Train}}
+    {{if $d.HeroMedia}}{{if $d.HeroMedia.LocationName}} — {{$d.HeroMedia.LocationName}}{{end}}{{end}}
+  </p>
+  {{end}}
+
+  {{if $d.Videos}}
+  <h2 class="section-heading">Videos</h2>
+
+  {{if $d.Rarities}}
+  <div style="margin-bottom:1rem;font-size:.9rem">
+    {{range $i, $rty := $d.Rarities}}{{if $i}} &nbsp; {{end}}<a href="#video-table" style="text-decoration:none">{{$rty.Emoji}} {{$rty.Label}} ({{$rty.Count}})</a>{{end}}
+  </div>
+  {{end}}
+
+  {{with $d.BestVideo}}
+  <div class="video-embed">
+    {{if .Title}}<p style="font-weight:500;margin-bottom:.5rem">★ {{.Title}}</p>{{end}}
+    {{if isYoutube .SourceDomain}}
+    <iframe src="https://www.youtube.com/embed/{{youtubeID .URL}}" allowfullscreen loading="lazy" title="{{.Title}}"></iframe>
+    {{else if isVimeo .SourceDomain}}
+    <iframe src="https://player.vimeo.com/video/{{.URL}}" allowfullscreen loading="lazy" title="{{.Title}}"></iframe>
+    {{else}}
+    <a href="{{.URL}}" target="_blank" rel="noopener">{{if .Title}}{{.Title}}{{else}}{{.URL}}{{end}}</a>
+    {{end}}
+    {{if .Caption}}<div class="media-item-caption">{{.Caption}}</div>{{end}}
+    {{if rarityBadges .Tags}}
+    <div class="video-tags">
+      {{range rarityBadges .Tags}}<span class="video-tag">{{.Emoji}} {{.Label}}</span>{{end}}
+    </div>
+    {{end}}
+    <div style="font-size:.8rem;color:var(--muted);margin-top:.4rem">Contributed by {{template "contributorLink" .}}</div>
+  </div>
+  {{end}}
+
+  <table class="admin-table" id="video-table" style="margin-top:1.5rem">
+    <thead><tr><th>Title</th><th>Rarities</th><th>Contributor</th></tr></thead>
+    <tbody>
+      {{range $d.Videos}}
+      <tr>
+        <td><a href="{{.URL}}" target="_blank" rel="noopener">{{if .Title}}{{.Title}}{{else}}{{.URL}}{{end}}</a>{{if .IsBest}} ★{{end}}</td>
+        <td>{{range rarityBadges .Tags}}<span title="{{.Label}}" style="margin-right:.3rem">{{.Emoji}}</span>{{else}}<span style="color:var(--muted)">—</span>{{end}}</td>
+        <td>{{template "contributorLink" .}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+
+  {{if $d.Images}}
+  <h2 class="section-heading">Photos</h2>
+  <div class="media-grid">
+    {{range $d.Images}}
+    <div class="media-item">
+      <img src="{{.PublicURL}}" alt="{{.Title}}" loading="lazy">
+      <div class="media-item-body">
+        {{if .Title}}<div class="media-item-title">{{.Title}}</div>{{end}}
+        {{if .Caption}}<div class="media-item-caption">{{.Caption}}</div>{{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if $d.Websites}}
+  <h2 class="section-heading">Links</h2>
+  <ul class="link-list">
+    {{range $d.Websites}}
+    <li>
+      <span class="link-badge">Website</span>
+      <a href="{{.URL}}" target="_blank" rel="noopener">{{if .Title}}{{.Title}}{{else}}{{.URL}}{{end}}</a>
+      {{if .SourceDomain}}<span style="font-size:.8rem;color:var(--muted);margin-left:.4rem">— {{.SourceDomain}}</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+
+  {{if or $d.MapMedia $d.Stops}}
+  <div class="train-map-split">
+    {{if $d.MapMedia}}
+    <div class="train-map-col">
+      <h2 class="section-heading" style="margin-top:0">Route Map</h2>
+      <img src="{{$d.MapMedia.PublicURL}}" alt="{{if $d.MapMedia.Title}}{{$d.MapMedia.Title}}{{else}}Route map{{end}}" class="train-map-img">
+      {{if $d.MapMedia.Caption}}<p style="font-size:.8rem;color:var(--muted);margin-top:.5rem">{{$d.MapMedia.Caption}}</p>{{end}}
+    </div>
+    {{end}}
+    {{if $d.Stops}}
+    <div class="train-schedule-col">
+      <h2 class="section-heading" style="margin-top:0">Route &amp; Schedule</h2>
+      <ol class="stop-list stop-list--schedule">
+        {{range $d.Stops}}
+        <li class="stop-item">
+          <span class="stop-dot"></span>
+          <div class="stop-detail">
+            <div class="stop-name-row">
+              <a href="/stations/{{.StopSlug}}" class="stop-name">{{.StopName}}</a>
+              {{if .StationCode}}<span class="stop-code">{{.StationCode}}</span>{{end}}
+              {{if and .RunsWeekday (not .RunsWeekend)}}<span class="stop-day-badge stop-day-badge--weekday">Weekday</span>{{end}}
+              {{if and .RunsWeekend (not .RunsWeekday)}}<span class="stop-day-badge stop-day-badge--weekend">Weekend</span>{{end}}
+            </div>
+            {{if or .ScheduledArrival .ScheduledDeparture}}
+            <div class="stop-times">
+              {{if .ScheduledArrival}}<span class="stop-time-label">Arr</span> <span class="stop-time">{{.ScheduledArrival}}</span>{{end}}
+              {{if and .ScheduledArrival .ScheduledDeparture}}<span style="margin:0 .25rem;color:var(--muted)">·</span>{{end}}
+              {{if .ScheduledDeparture}}<span class="stop-time-label">Dep</span> <span class="stop-time">{{.ScheduledDeparture}}</span>{{end}}
+            </div>
+            {{end}}
+          </div>
+        </li>
+        {{end}}
+      </ol>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  <div style="margin:2.5rem 0;padding-top:1.5rem;border-top:1px solid var(--border)">
+    <a href="/trains/{{$d.Train.Slug}}/suggest" class="btn btn-secondary">📷 Suggest a photo or video</a>
+  </div>
+
+  <section id="comments" style="margin:2.5rem 0;padding-top:1.5rem;border-top:1px solid var(--border)">
+    <h2 class="section-heading" style="margin-top:0">Comments</h2>
+
+    {{if $d.Comments}}
+    <ul style="list-style:none;padding:0;margin:0 0 1.5rem;display:flex;flex-direction:column;gap:1rem">
+      {{range $d.Comments}}
+      <li style="border:1px solid var(--border);border-radius:6px;padding:.85rem 1rem">
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:.35rem">
+          <a href="/users/{{.Username}}" style="font-weight:600">{{.Username}}</a>
+          <span style="margin:0 .35rem">·</span>{{.CreatedAt}}
+        </div>
+        <div style="white-space:pre-wrap;word-break:break-word">{{.Body}}</div>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p style="color:var(--muted);margin-bottom:1.5rem">No comments yet. Be the first to share your thoughts.</p>
+    {{end}}
+
+    {{if $d.OwnPendingComments}}
+    <ul style="list-style:none;padding:0;margin:0 0 1.5rem;display:flex;flex-direction:column;gap:1rem">
+      {{range $d.OwnPendingComments}}
+      <li style="border:1px dashed var(--border);border-radius:6px;padding:.85rem 1rem;opacity:.6">
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:.35rem">
+          <span style="font-weight:600">{{.Username}}</span>
+          <span style="margin:0 .35rem">·</span>{{.CreatedAt}}
+          <span style="margin-left:.5rem;font-size:.75rem;background:var(--border);border-radius:4px;padding:.1rem .4rem">awaiting review</span>
+        </div>
+        <div style="white-space:pre-wrap;word-break:break-word">{{.Body}}</div>
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+
+    {{if .CurrentUser}}
+    <form method="post" action="/trains/{{$d.Train.Slug}}/comment" class="admin-form" style="max-width:640px">
+      <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
+      <input type="text" name="website" value="" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
+      <input type="text" name="a" value="" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
+      <input type="hidden" name="b" value="ok">
+      <div class="form-group">
+        <label class="form-label" for="comment-body">Add a comment</label>
+        <textarea class="form-textarea" id="comment-body" name="body" rows="3" maxlength="2000" required placeholder="Share what you know about this train…"></textarea>
+        <div class="form-hint">Plain text only. Comments are reviewed by an admin before they appear.</div>
+      </div>
+      <button class="btn btn-primary" type="submit">Post comment</button>
+    </form>
+    {{else}}
+    <p style="color:var(--muted)">
+      <a href="/login">Log in</a> or <a href="/register">register</a> to leave a comment.
+    </p>
+    {{end}}
+  </section>
+</div>
+
+{{if trainHasGeo $d.Train}}
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script src="/static/map.js"></script>
+{{end}}
+<script>
+(function() {
+  var btn = document.getElementById('copy-link-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    navigator.clipboard.writeText(btn.dataset.url).then(function() {
+      var orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = orig; }, 1500);
+    });
+  });
+})();
+</script>
+{{end}}

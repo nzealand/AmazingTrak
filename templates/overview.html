@@ -1,0 +1,100 @@
+{{define "title"}}Overview — {{siteName}}{{end}}
+{{define "content"}}
+{{$d := .Data}}
+<div style="background:linear-gradient(135deg,#1e3a5f,#0a1628);padding:2.5rem 2rem;color:#fff">
+  <div class="container">
+    <h1 style="font-size:2rem;font-weight:700">Overview</h1>
+    <p style="opacity:.75;margin-top:.25rem">Highlights, top contributors, and where your videos are needed most.</p>
+  </div>
+</div>
+
+<div class="container" style="padding-top:2rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:2rem;align-items:start">
+
+  <section>
+    <h2 class="section-heading" style="margin-top:0">🏆 Top Videos by Rarities</h2>
+    {{if $d.TopVideos}}
+    <ol style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:.85rem">
+      {{range $i,$v := $d.TopVideos}}
+      <li style="display:flex;gap:.75rem;align-items:flex-start">
+        <span style="font-size:1.1rem;font-weight:700;color:var(--muted);min-width:1.5rem;text-align:right">{{inc $i}}.</span>
+        <div style="min-width:0">
+          <div style="font-weight:600;font-size:.95rem"><a href="/trains/{{$v.TrainSlug}}#video-table">{{$v.TrainName}}</a></div>
+          {{if $v.Title}}<div style="font-size:.82rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{$v.Title}}</div>{{end}}
+          <div style="margin-top:.25rem">{{range rarityBadges $v.Tags}}<span class="video-tag" style="font-size:.75rem">{{.Emoji}} {{.Label}}</span> {{end}}</div>
+          <div style="font-size:.78rem;color:var(--muted);margin-top:.15rem">by {{$v.Contributor}}</div>
+        </div>
+      </li>
+      {{end}}
+    </ol>
+    {{else}}<p style="color:var(--muted)">No rarity-tagged videos yet.</p>{{end}}
+  </section>
+
+  <section>
+    <h2 class="section-heading" style="margin-top:0">⭐ Top Contributors by Submissions</h2>
+    {{if $d.TopUsers}}
+    <ol style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:.6rem">
+      {{range $i,$u := $d.TopUsers}}
+      <li style="display:flex;justify-content:space-between;align-items:center;padding:.5rem .6rem;background:var(--card-bg);border:1px solid var(--border);border-radius:6px">
+        <span style="display:flex;align-items:center;gap:.6rem">
+          <span style="font-weight:700;color:var(--muted);min-width:1.4rem;text-align:right;font-size:.9rem">{{inc $i}}.</span>
+          <a href="/users/{{$u.Username}}" style="font-weight:600">{{$u.Username}}</a>
+        </span>
+        <span style="font-size:.82rem;font-weight:600;color:var(--accent)">📹 {{$u.RarityCount}}</span>
+      </li>
+      {{end}}
+    </ol>
+    {{else}}<p style="color:var(--muted)">No contributor data yet.</p>{{end}}
+  </section>
+
+  <section>
+    <h2 class="section-heading" style="margin-top:0">🎬 Latest Videos</h2>
+    {{if $d.LatestVideos}}
+    <div style="display:flex;flex-direction:column;gap:.7rem">
+      {{range $d.LatestVideos}}
+      <div style="padding:.5rem .6rem;background:var(--card-bg);border:1px solid var(--border);border-radius:6px">
+        <div style="font-weight:600;font-size:.9rem"><a href="/trains/{{.TrainSlug}}#video-table">{{.TrainName}}</a></div>
+        {{if .Title}}<div style="font-size:.82rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><a href="{{.URL}}" target="_blank" rel="noopener">{{.Title}}</a></div>{{end}}
+        <div style="font-size:.75rem;color:var(--muted);margin-top:.2rem;display:flex;justify-content:space-between;align-items:center">
+          <span>{{range rarityBadges .Tags}}<span style="margin-right:.25rem">{{.Emoji}}</span>{{end}}</span>
+          <span>{{.CreatedAt}}</span>
+        </div>
+      </div>
+      {{end}}
+    </div>
+    {{else}}<p style="color:var(--muted)">No videos yet.</p>{{end}}
+  </section>
+
+  <section>
+    <h2 class="section-heading" style="margin-top:0">💬 Latest Comments</h2>
+    {{if $d.LatestComments}}
+    <div style="display:flex;flex-direction:column;gap:.7rem">
+      {{range $d.LatestComments}}
+      <div style="padding:.6rem .75rem;background:var(--card-bg);border:1px solid var(--border);border-radius:6px">
+        <div style="font-size:.82rem;color:var(--muted);margin-bottom:.3rem;display:flex;justify-content:space-between">
+          <span><a href="/users/{{.Username}}" style="font-weight:600">{{.Username}}</a> on <a href="/trains/{{.TrainSlug}}#comments">{{.TrainName}}</a></span>
+          <span>{{.CreatedAt}}</span>
+        </div>
+        <div style="font-size:.88rem;white-space:pre-wrap;word-break:break-word">{{truncate .Body 120}}</div>
+      </div>
+      {{end}}
+    </div>
+    {{else}}<p style="color:var(--muted)">No comments yet.</p>{{end}}
+  </section>
+
+  <section>
+    <h2 class="section-heading" style="margin-top:0">📹 Trains Needing Videos</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:.85rem">Corridors with the most trains that have no video footage yet.</p>
+    {{if $d.MissingCorridors}}
+    <div style="display:flex;flex-direction:column;gap:.6rem">
+      {{range $d.MissingCorridors}}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem .6rem;background:var(--card-bg);border:1px solid var(--border);border-radius:6px">
+        <a href="/corridors/{{.CorridorSlug}}" style="font-weight:600">{{.CorridorName}}</a>
+        <span style="font-size:.82rem;font-weight:600;color:#ef4444">{{.MissingCount}} without video</span>
+      </div>
+      {{end}}
+    </div>
+    {{else}}<p style="color:var(--muted)">All trains have videos!</p>{{end}}
+  </section>
+
+</div>
+{{end}}

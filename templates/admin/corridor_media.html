@@ -1,0 +1,232 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+<div style="margin-bottom:1rem">
+  <a href="{{.AdminPrefix}}/corridors/{{$d.Corridor.ID}}" class="btn btn-secondary btn-sm">← Edit Corridor</a>
+</div>
+
+{{if $d.Media}}
+<div class="media-admin-grid">
+  {{range $d.Media}}
+  {{$isHero := and $d.Corridor.HeroMediaID.Valid (eq $d.Corridor.HeroMediaID.Int64 .ID)}}
+  {{$isThumb := and $d.Corridor.ThumbnailMediaID.Valid (eq $d.Corridor.ThumbnailMediaID.Int64 .ID)}}
+  <div class="media-admin-card {{if $isHero}}is-hero{{else if $isThumb}}is-thumb{{end}}">
+    {{if eq .MediaType "image"}}
+      <img class="media-admin-thumb" src="{{.PublicURL}}" alt="{{.Title}}" loading="lazy">
+    {{else}}
+      <div class="media-admin-thumb-placeholder">
+        {{if eq .MediaType "video"}}🎬{{else}}🔗{{end}}
+      </div>
+    {{end}}
+    <div class="media-admin-body">
+      <div class="media-admin-meta">
+        <span class="media-admin-badge">{{mediaLabel .MediaType}}</span>
+        {{if $isHero}} <span style="color:var(--accent);font-weight:600;font-size:.75rem">Hero</span>{{end}}
+        {{if $isThumb}} <span style="color:#a855f7;font-weight:600;font-size:.75rem">Thumb</span>{{end}}
+      </div>
+      <div class="media-admin-title">{{if .Title}}{{.Title}}{{else}}<span style="color:var(--muted)">(no title)</span>{{end}}</div>
+      <div class="media-admin-meta" style="margin-top:.2rem">
+        {{if .URL}}{{truncate .URL 50}}{{else}}{{truncate .PublicURL 50}}{{end}}
+      </div>
+      <div style="font-size:.75rem;color:var(--muted)">Contributor: {{template "contributorLink" .}}</div>
+      {{if .HasGeo}}
+      <div style="font-size:.75rem;color:var(--muted)">📍 {{.LatStr}}, {{.LonStr}}{{if .LocationName}} — {{.LocationName}}{{end}}</div>
+      {{end}}
+      <div class="media-admin-actions">
+        {{if eq .MediaType "image"}}
+        <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/hero">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="btn btn-sm btn-secondary" type="submit">Set Hero</button>
+        </form>
+        <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/thumbnail">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="btn btn-sm btn-secondary" type="submit">Set Thumb</button>
+        </form>
+        {{end}}
+        <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/delete"
+          onsubmit="return confirm('Delete this media item?')">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+        </form>
+      </div>
+      {{if eq .MediaType "video"}}
+      <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/title" style="margin-top:.5rem;display:flex;gap:.35rem;align-items:flex-start">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input class="form-input" type="text" name="title" placeholder="Title…" value="{{.Title}}" style="font-size:.78rem;padding:.3rem .5rem;flex:1">
+        <button class="btn btn-sm btn-secondary" type="submit" style="white-space:nowrap">Update title</button>
+      </form>
+      {{end}}
+      <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/caption" style="margin-top:.5rem;display:flex;gap:.35rem;align-items:flex-start">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <textarea class="form-textarea" name="caption" rows="2" placeholder="Caption…" style="font-size:.78rem;padding:.3rem .5rem;flex:1;resize:vertical">{{.Caption}}</textarea>
+        <button class="btn btn-sm btn-secondary" type="submit" style="white-space:nowrap">Update caption</button>
+      </form>
+      <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/geo" class="geo-form">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input class="form-input" type="number" name="lat" step="0.000001" placeholder="Latitude" value="{{.LatStr}}" style="font-size:.78rem;padding:.3rem .5rem">
+        <input class="form-input" type="number" name="lon" step="0.000001" placeholder="Longitude" value="{{.LonStr}}" style="font-size:.78rem;padding:.3rem .5rem">
+        <input class="form-input geo-name" type="text" name="location_name" placeholder="Location name" value="{{.LocationName}}" style="font-size:.78rem;padding:.3rem .5rem">
+        <button class="btn btn-sm btn-secondary" type="submit">Update location</button>
+      </form>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<p style="color:var(--muted);margin-bottom:1.5rem">No media yet for this corridor.</p>
+{{end}}
+
+<h3 style="font-size:1rem;font-weight:600;margin-bottom:.75rem">Add Media</h3>
+<form method="post" action="{{.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/add"
+  enctype="multipart/form-data" class="admin-form" id="media-form">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="source_type" id="source_type" value="url">
+  <input type="hidden" name="media_type_select" id="media_type_select" value="website">
+  <input type="hidden" name="post_action" id="post_action" value="">
+
+  <div class="tab-container">
+    <div class="tabs">
+      <button type="button" class="tab-btn active" onclick="switchTab('schedule')">Schedule URL</button>
+      <button type="button" class="tab-btn" onclick="switchTab('website')">Website</button>
+      <button type="button" class="tab-btn" onclick="switchTab('imageurl')">Image URL</button>
+      <button type="button" class="tab-btn" onclick="switchTab('upload')">Upload Image</button>
+      <button type="button" class="tab-btn" onclick="switchTab('paste')">Paste Image</button>
+      <button type="button" class="tab-btn" onclick="switchTab('banner')">Paste Banner</button>
+      <button type="button" class="tab-btn" onclick="switchTab('thumb')">Paste Thumbnail</button>
+    </div>
+
+    <div id="tab-schedule" class="tab-panel active">
+      <div class="form-group">
+        <label class="form-label">Schedule URL <span style="color:var(--muted);font-size:.85rem">(Amtrak schedule page, timetable, etc.)</span></label>
+        <input class="form-input" type="url" name="url" placeholder="https://www.amtrak.com/routes/...">
+      </div>
+    </div>
+
+    <div id="tab-website" class="tab-panel">
+      <div class="form-group">
+        <label class="form-label">Website / Article URL</label>
+        <input class="form-input url-input" type="url" name="url" placeholder="https://...">
+      </div>
+    </div>
+
+    <div id="tab-imageurl" class="tab-panel">
+      <div class="form-group">
+        <label class="form-label">Image URL</label>
+        <input class="form-input url-input" type="url" name="url" placeholder="https://...">
+      </div>
+    </div>
+
+    <div id="tab-upload" class="tab-panel">
+      <div class="form-group">
+        <label class="form-label">Image file <span style="color:var(--muted)">(JPEG, PNG, GIF, WebP)</span></label>
+        <input class="form-input" type="file" name="file" id="file-input" accept="image/jpeg,image/png,image/gif,image/webp">
+        <img id="upload-preview" class="upload-preview" style="display:none">
+      </div>
+    </div>
+
+    <div id="tab-paste" class="tab-panel">
+      <p id="paste-tab-label" style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem">Paste an image to add it to the corridor media library.</p>
+      <div id="paste-area" class="paste-zone">Click here, then press Ctrl+V (or ⌘V) to paste an image</div>
+      <input type="file" name="paste_file" id="paste-file" style="display:none" accept="image/*">
+      <img id="paste-preview" class="upload-preview" style="display:none;margin-top:.75rem">
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">Title</label>
+      <input class="form-input" type="text" name="title" placeholder="Optional">
+    </div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Caption</label>
+    <textarea class="form-textarea" name="caption" rows="2" placeholder="Optional caption or description"></textarea>
+  </div>
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">Latitude</label>
+      <input class="form-input" type="number" name="lat" step="0.000001" placeholder="e.g. 37.9354">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Longitude</label>
+      <input class="form-input" type="number" name="lon" step="0.000001" placeholder="e.g. -122.3535">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Location name</label>
+      <input class="form-input" type="text" name="location_name" placeholder="e.g. Richmond, CA">
+    </div>
+  </div>
+  <button class="btn btn-primary" type="submit">Add Media</button>
+</form>
+
+<script>
+var tabConfig = {
+  schedule: {panel:'tab-schedule', srcType:'url',    mediaType:'website', postAction:'',              pasteLabel:''},
+  website:  {panel:'tab-website',  srcType:'url',    mediaType:'website', postAction:'',              pasteLabel:''},
+  imageurl: {panel:'tab-imageurl', srcType:'url',    mediaType:'image',   postAction:'',              pasteLabel:''},
+  upload:   {panel:'tab-upload',   srcType:'upload', mediaType:'image',   postAction:'',              pasteLabel:''},
+  paste:    {panel:'tab-paste',    srcType:'paste',  mediaType:'image',   postAction:'',              pasteLabel:'Paste an image to add it to the corridor media library.'},
+  banner:   {panel:'tab-paste',    srcType:'paste',  mediaType:'image',   postAction:'set_hero',      pasteLabel:'Paste an image to set it as the corridor hero (banner) image.'},
+  thumb:    {panel:'tab-paste',    srcType:'paste',  mediaType:'image',   postAction:'set_thumbnail', pasteLabel:'Paste an image to set it as the corridor thumbnail.'}
+};
+
+var currentTab = 'schedule';
+
+function switchTab(key) {
+  var cfg = tabConfig[key];
+  if (!cfg) return;
+  currentTab = key;
+
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+
+  var btns = document.querySelectorAll('.tab-btn');
+  var order = ['schedule','website','imageurl','upload','paste','banner','thumb'];
+  btns[order.indexOf(key)].classList.add('active');
+
+  document.getElementById(cfg.panel).classList.add('active');
+  document.getElementById('source_type').value = cfg.srcType;
+  document.getElementById('media_type_select').value = cfg.mediaType;
+  document.getElementById('post_action').value = cfg.postAction;
+
+  if (cfg.pasteLabel) {
+    document.getElementById('paste-tab-label').textContent = cfg.pasteLabel;
+  }
+}
+
+document.getElementById('file-input').addEventListener('change', function(e) {
+  var f = e.target.files[0]; if (!f) return;
+  var r = new FileReader(); r.onload = function(ev) {
+    var img = document.getElementById('upload-preview');
+    img.src = ev.target.result; img.style.display = 'block';
+  }; r.readAsDataURL(f);
+});
+
+var pasteArea = document.getElementById('paste-area');
+pasteArea.addEventListener('click', function() {
+  this.classList.add('ready');
+  this.textContent = 'Ready — paste now (Ctrl+V or ⌘V)';
+});
+
+document.addEventListener('paste', function(e) {
+  var items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf('image') !== -1) {
+      var file = items[i].getAsFile();
+      var dt = new DataTransfer(); dt.items.add(file);
+      document.getElementById('paste-file').files = dt.files;
+      var r = new FileReader(); r.onload = function(ev) {
+        var img = document.getElementById('paste-preview');
+        img.src = ev.target.result; img.style.display = 'block';
+      }; r.readAsDataURL(file);
+      pasteArea.textContent = '✓ Image pasted — ready to submit';
+      pasteArea.classList.remove('ready');
+      if (currentTab !== 'paste' && currentTab !== 'banner' && currentTab !== 'thumb') {
+        switchTab('paste');
+      }
+      break;
+    }
+  }
+});
+</script>
+{{end}}

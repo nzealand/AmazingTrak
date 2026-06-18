@@ -1,0 +1,144 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+
+<section style="margin-bottom:2.5rem">
+  <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+    <span>Registered Users</span>
+    {{if $d.Users}}
+    <form method="post" action="{{.AdminPrefix}}/users/delete-unapproved" onsubmit="return confirm('Delete ALL pending/confirmed (unapproved) users? Their non-rare submissions will be removed; rare ones are preserved.')">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="btn btn-sm btn-danger" type="submit">Delete all unapproved</button>
+    </form>
+    {{end}}
+  </h3>
+
+  {{if $d.Users}}
+  <table class="admin-table">
+    <thead><tr><th>Username</th><th>Email</th><th>Status</th><th>Submissions</th><th>Joined</th><th>Actions</th></tr></thead>
+    <tbody>
+      {{range $d.Users}}
+      <tr>
+        <td><a href="/users/{{.Username}}" target="_blank" title="View public profile">{{.Username}}</a></td>
+        <td style="font-size:.85rem">
+          {{if .Email}}{{.Email}} {{if .EmailConfirmed}}<span title="Email confirmed" style="color:#16a34a">✓</span>{{else}}<span title="Not confirmed" style="color:var(--muted)">·</span>{{end}}{{else}}<span style="color:var(--muted)">—</span>{{end}}
+        </td>
+        <td>
+          {{if .IsSpammer}}<span class="status-badge status-rejected">🚫 spammer</span>
+          {{else if eq .Status "auto_approved"}}<span class="status-badge" style="background:#fef3c7;color:#92400e">⚡ auto-approved</span>
+          {{else if eq .Status "approved"}}<span class="status-badge status-approved">approved</span>
+          {{else if eq .Status "confirmed"}}<span class="status-badge" style="background:#dbeafe;color:#1e40af">confirmed</span>
+          {{else}}<span class="status-badge status-pending">pending</span>{{end}}
+        </td>
+        <td>
+          {{if .SubmissionCount}}<a href="{{$.AdminPrefix}}/users/{{.ID}}/submissions">{{.SubmissionCount}}</a>{{else}}0{{end}}
+        </td>
+        <td style="font-size:.8rem;color:var(--muted)">{{.CreatedAt}}</td>
+        <td>
+          <div class="btn-group">
+            {{if .IsApproved}}
+            <form method="post" action="{{$.AdminPrefix}}/users/{{.ID}}/unapprove">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn btn-sm btn-secondary" type="submit">Unapprove</button>
+            </form>
+            {{else}}
+            <form method="post" action="{{$.AdminPrefix}}/users/{{.ID}}/approve">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn btn-sm btn-primary" type="submit">Approve</button>
+            </form>
+            {{end}}
+            {{if not .IsApproved}}
+            <form method="post" action="{{$.AdminPrefix}}/users/{{.ID}}/delete" onsubmit="return confirm('Delete this user? Non-rare submissions are removed; rare submissions are preserved.')">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+            </form>
+            {{end}}
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p style="color:var(--muted);padding:1.5rem 0">No registered users yet.</p>
+  {{end}}
+</section>
+
+<section style="margin-bottom:2.5rem">
+  <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Admin Accounts</h3>
+  <table class="admin-table">
+    <thead><tr><th>Username</th><th>Role / permissions</th><th>Last login</th><th>Actions</th></tr></thead>
+    <tbody>
+      {{range $d.Admins}}
+      <tr>
+        <td>{{.Username}}</td>
+        <td style="font-size:.85rem">{{.PermissionLabel}}</td>
+        <td style="font-size:.8rem;color:var(--muted)">{{if .LastLoginAt}}{{.LastLoginAt}}{{else}}—{{end}}</td>
+        <td>
+          {{if .IsCentral}}
+          <span style="font-size:.8rem;color:var(--muted)">central admin</span>
+          {{else}}
+          <form method="post" action="{{$.AdminPrefix}}/admins/{{.ID}}/delete" onsubmit="return confirm('Delete this admin account?')">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+
+<section style="max-width:480px;margin-bottom:2.5rem">
+  <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Add User Account</h3>
+  <p style="font-size:.875rem;color:var(--muted);margin-bottom:1rem">
+    Creates a regular registered user, approved immediately.
+  </p>
+  <form method="post" action="{{.AdminPrefix}}/users/add-user" class="admin-form">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input class="form-input" type="text" name="username" required minlength="3" maxlength="30" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email <span style="color:var(--muted);font-size:.85rem">(optional)</span></label>
+      <input class="form-input" type="email" name="email" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input class="form-input" type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="Min 8 characters">
+    </div>
+    <button class="btn btn-primary" type="submit">Create User</button>
+  </form>
+</section>
+
+<section style="max-width:480px">
+  <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Add Admin Account</h3>
+  <p style="font-size:.875rem;color:var(--muted);margin-bottom:1rem">
+    Permission levels are cumulative — a higher level includes everything below it.
+  </p>
+  <form method="post" action="{{.AdminPrefix}}/users/add-admin" class="admin-form">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input class="form-input" type="text" name="username" required minlength="3" maxlength="30" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input class="form-input" type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="Min 8 characters">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Permission level</label>
+      <select class="form-input" name="permission_level" required>
+        <option value="1">L1 — Suggestions</option>
+        <option value="2">L2 — Suggestions, Comments</option>
+        <option value="3">L3 — Suggestions, Comments, Trains</option>
+        <option value="4">L4 — Suggestions, Comments, Trains, Corridors</option>
+        <option value="5">L5 — Suggestions, Comments, Trains, Corridors, Settings</option>
+        <option value="6">L6 — Suggestions, Comments, Trains, Corridors, Settings, Users</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" type="submit">Create Admin</button>
+  </form>
+</section>
+{{end}}

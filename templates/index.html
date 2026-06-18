@@ -1,0 +1,37 @@
+{{define "title"}}{{siteName}} — Amtrak Train Tracker{{end}}
+{{define "content"}}
+{{$d := .Data}}
+
+<div style="background:linear-gradient(135deg,#1e3a5f,#0a1628);color:#fff;padding:2.5rem 2rem">
+  <div class="container">
+    <h1 style="font-size:2.2rem;font-weight:800;text-shadow:0 2px 8px rgba(0,0,0,.5)">Track Amtrak in Real Style</h1>
+    <p style="margin-top:.5rem;opacity:.85;font-size:1rem;max-width:540px">Photos, videos, and schedules for Amtrak corridors and trains across the country.</p>
+  </div>
+</div>
+
+<div class="container" style="padding-top:1.25rem;padding-bottom:3rem">
+  {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+  <div class="cards-grid" style="padding-top:.75rem">
+    {{range $d}}
+    <a href="/corridors/{{.Slug}}" style="text-decoration:none;color:inherit">
+      <div class="card">
+        {{if .ThumbnailURL}}
+          <img class="card-thumb" src="{{.ThumbnailURL}}" alt="{{.Name}}" loading="lazy">
+        {{else if .HeroImageURL}}
+          <img class="card-thumb" src="{{.HeroImageURL}}" alt="{{.Name}}" loading="lazy">
+        {{else}}
+          <div class="card-thumb-placeholder">🚄</div>
+        {{end}}
+        <div class="card-body">
+          <div class="card-title">{{.Name}}</div>
+          <div class="card-meta" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:.2rem">
+            {{if .Region}}<span class="corridor-region" style="margin:0">{{.Region}}</span>{{end}}
+            <span>{{.TrainCount}} trains</span>
+          </div>
+        </div>
+      </div>
+    </a>
+    {{end}}
+  </div>
+</div>
+{{end}}

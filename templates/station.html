@@ -1,0 +1,54 @@
+{{define "title"}}{{.Data.StationName}} Station — {{siteName}}{{end}}
+{{define "content"}}
+{{$d := .Data}}
+
+<div style="background:linear-gradient(135deg,#1e3a5f,#0a1628);padding:2.5rem 2rem;color:#fff">
+  <div class="container">
+    <nav style="font-size:.85rem;opacity:.75;margin-bottom:.5rem">
+      <a href="/" style="color:#fff">Home</a> › Station
+    </nav>
+    <h1 style="font-size:2rem;font-weight:700">{{$d.StationName}}</h1>
+    {{if $d.StationCode}}<div style="font-size:1rem;opacity:.8;margin-top:.25rem">Station Code: {{$d.StationCode}}</div>{{end}}
+  </div>
+</div>
+
+<div class="container" style="padding-top:1.5rem">
+  {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+
+  {{if $d.Entries}}
+  {{range $d.Entries}}
+  <div style="margin-bottom:2.5rem">
+    <h2 class="section-heading">
+      <a href="/corridors/{{.Corridor.Slug}}">{{.Corridor.Name}}</a>
+    </h2>
+    {{if .Trains}}
+    <ol class="stop-list stop-list--schedule" style="max-width:480px">
+      {{range .Trains}}
+      <li class="stop-item">
+        <span class="stop-dot"></span>
+        <div class="stop-detail">
+          <div class="stop-name-row">
+            <a href="/trains/{{.Slug}}" class="stop-name">{{.DisplayName}}</a>
+            {{if .Direction}}<span class="stop-code">{{.Direction}}</span>{{end}}
+          </div>
+          {{if or .ScheduledArrival .ScheduledDeparture}}
+          <div class="stop-times">
+            {{if .ScheduledArrival}}<span class="stop-time-label">Arr</span> <span class="stop-time">{{.ScheduledArrival}}</span>{{end}}
+            {{if and .ScheduledArrival .ScheduledDeparture}}<span style="margin:0 .25rem;color:var(--muted)">·</span>{{end}}
+            {{if .ScheduledDeparture}}<span class="stop-time-label">Dep</span> <span class="stop-time">{{.ScheduledDeparture}}</span>{{end}}
+          </div>
+          {{end}}
+        </div>
+      </li>
+      {{end}}
+    </ol>
+    {{else}}
+    <p style="color:var(--muted);font-size:.9rem">No active trains scheduled for this corridor.</p>
+    {{end}}
+  </div>
+  {{end}}
+  {{else}}
+  <p style="color:var(--muted)">No schedule information available for this station.</p>
+  {{end}}
+</div>
+{{end}}

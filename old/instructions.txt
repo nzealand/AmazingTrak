@@ -1,0 +1,411 @@
+ok i want a simple train tracker website, it will allow the secret unpublished administrator admin/secret to manage the current and inactive trains by default with all the following trains configured in the amtrak sqlite table by route, it will allow the admin to authenticate and access an admin train page to add edit existing Corridors or create new Corridors, and also inactivate and add additional trains and indicate if they are active or inactive and put them under the existing or new Corridor as relevant. the admin will also be able to drill into each train from the admin train page and add links, the admin can add links to either videos or images or websites in general. at least one image should be marked by the admin as a hero image. there will be a public set of pages to list all the trains and drill into the train details to see the train details and the hero image will be shown by default, and a list of published videos and published images and published links. any visitor will be able to contribute but not publish photos or videos but not contribute other links, and so only links to videos and photos should be allowed from the public either by limiting the domain to youtube etc or by validating the link is a video/image. the admin should see a list of suggested urls in each train admin page and be able to approve or reject individual suggestions or all suggestions from a single click
+follow the go-web-simple including to use sqlite and go, the tables should be designed to track corridors, trains, links and suggestions.
+Currently Operating Amtrak Train Numbers
+Exact numbers shift slightly with schedules, but the following ranges are stable as of 2025–2026.
+Long Distance Trains
+Sunset Limited: 1, 2
+Southwest Chief: 3, 4
+California Zephyr: 5, 6
+Empire Builder: 7, 8, 27, 28
+Coast Starlight: 11, 14
+Crescent: 19, 20
+Texas Eagle: 21, 22, 421, 422
+Floridian: 40, 41
+Pennsylvanian: 42, 43
+Lake Shore Limited: 48, 49, 448, 449
+Cardinal: 50, 51
+Auto Train: 52, 53
+Vermonter: 54–57
+City of New Orleans: 58, 59
+Adirondack: 68, 69
+Piedmont: 71–78
+Carolinian: 79, 80
+Palmetto: 89, 90
+Silver Meteor: 97, 98
+Northeast Regional (long-distance extensions): many in 65–67, 82–88, 93–96, 99, 111, 121–198, etc.
+Winter Park Express (seasonal): 1105, 1106
+NEC / Empire / Corridor Trains
+Acela: 2100–2290 (varies by trip)
+Northeast Regional (core NEC): roughly 100–199 block (many 101–198 variants)
+Keystone Service: 600–674 range
+Empire Service: 230–288 range
+Hartford Line / Valley Flyer: 400–499 range (e.g., 400, 405–432, 450–499)
+Capitol Corridor: 520–553, 720–751
+Pacific Surfliner: 562–595, 761–794
+Amtrak Cascades: 500–519
+Hiawatha: 329–343
+Lincoln Service: 300–302, 304–307, 318–319
+Illinois Zephyr / Carl Sandburg: 380–383
+Illini / Saluki: 390–393
+Blue Water: 364, 365
+Pere Marquette: 370, 371
+Wolverine: 350–355
+Missouri River Runner: 311, 316, 318–319 (some overlap by schedule)
+Heartland Flyer: 821, 822
+Downeaster: 680–699, 1689
+Borealis: 1333, 1340
+Berkshire Flyer (seasonal): 1235, 1244
+Ethan Allen Express: 290, 291
+Gold Runner: 701–719
+# Train Tracker App Design
+## Verdict
+Use:
+```text
+Go + SQLite + server-rendered HTML + Caddy + systemd
+```
+Core entities:
+```text
+corridors
+trains
+links
+suggestions
+admin_users
+```
+Avoid user accounts for visitors. Public submissions should be anonymous but heavily rate-limited and moderated.
+---
+## Recommended Tables
+```sql
+CREATE TABLE corridors (
+id INTEGER PRIMARY KEY,
+name TEXT NOT NULL UNIQUE,
+slug TEXT NOT NULL UNIQUE,
+description TEXT,
+region TEXT,
+is_active INTEGER NOT NULL DEFAULT 1,
+sort_order INTEGER NOT NULL DEFAULT 0,
+created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE trains (
+id INTEGER PRIMARY KEY,
+corridor_id INTEGER NOT NULL REFERENCES corridors(id),
+train_number TEXT NOT NULL,
+name TEXT,
+slug TEXT NOT NULL UNIQUE,
+direction TEXT,
+notes TEXT,
+is_active INTEGER NOT NULL DEFAULT 1,
+sort_order INTEGER NOT NULL DEFAULT 0,
+created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+UNIQUE(corridor_id, train_number)
+);
+CREATE TABLE links (
+id INTEGER PRIMARY KEY,
+train_id INTEGER NOT NULL REFERENCES trains(id) ON DELETE CASCADE,
+url TEXT NOT NULL,
+title TEXT,
+link_type TEXT NOT NULL CHECK (link_type IN ('image', 'video', 'website')),
+source_domain TEXT,
+is_hero INTEGER NOT NULL DEFAULT 0,
+is_published INTEGER NOT NULL DEFAULT 1,
+added_by TEXT NOT NULL DEFAULT 'admin',
+created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE suggestions (
+id INTEGER PRIMARY KEY,
+train_id INTEGER NOT NULL REFERENCES trains(id) ON DELETE CASCADE,
+url TEXT NOT NULL,
+title TEXT,
+link_type TEXT NOT NULL CHECK (link_type IN ('image', 'video')),
+source_domain TEXT,
+status TEXT NOT NULL DEFAULT 'pending'
+CHECK (status IN ('pending', 'approved', 'rejected')),
+submitter_ip_hash TEXT,
+submitter_user_agent TEXT,
+rejection_reason TEXT,
+created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+reviewed_at TEXT,
+reviewed_by INTEGER REFERENCES admin_users(id)
+);
+CREATE TABLE admin_users (
+id INTEGER PRIMARY KEY,
+username TEXT NOT NULL UNIQUE,
+password_hash TEXT NOT NULL,
+created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+last_login_at TEXT
+);
+CREATE INDEX idx_trains_corridor ON trains(corridor_id);
+CREATE INDEX idx_links_train ON links(train_id);
+CREATE INDEX idx_links_hero ON links(train_id, is_hero);
+CREATE INDEX idx_suggestions_train_status ON suggestions(train_id, status);
+CREATE INDEX idx_suggestions_ip_time ON suggestions(submitter_ip_hash, created_at);
+```
+---
+## Hero Image Rule
+Enforce in app logic:
+```text
+Each train may have zero or one hero image.
+Only image links can be marked as hero.
+When setting a new hero image, unset the old one.
+```
+Optional SQLite partial unique index:
+```sql
+CREATE UNIQUE INDEX one_hero_per_train
+ON links(train_id)
+WHERE is_hero = 1;
+```
+---
+## Public Submission Rules
+Visitors can submit only:
+```text
+image links
+video links
+```
+Do not allow arbitrary websites from public users.
+Allowed public domains:
+```text
+youtube.com
+youtu.be
+vimeo.com
+flickr.com
+imgur.com
+instagram.com
+railpictures.net
+rrpicturearchives.net
+```
+For stronger control, start with only:
+```text
+youtube.com
+youtu.be
+vimeo.com
+flickr.com
+imgur.com
+```
+---
+## Anti-Spam Protections
+Use all of these:
+1. Rate limit by IP hash.
+2. Max 3 submissions per IP per hour.
+3. Max 10 submissions per IP per day.
+4. Require hidden honeypot field.
+5. Reject forms submitted too quickly, under 3 seconds.
+6. Normalize and deduplicate URLs.
+7. Block duplicate pending suggestions.
+8. Limit URL length.
+9. Validate domain allowlist.
+10. Require admin approval before publishing.
+Suggested constraints:
+```text
+Max URL length: 500 chars
+Max title length: 120 chars
+Public submissions: pending only
+No HTML in titles
+No file uploads
+No comments
+No user accounts
+```
+---
+## Admin Features
+Admin can:
+```text
+Create/edit corridors
+Activate/inactivate corridors
+Create/edit trains
+Activate/inactivate trains
+Add/edit/delete links
+Mark one image as hero
+View pending suggestions per train
+Approve one suggestion
+Reject one suggestion
+Approve all pending suggestions for a train
+Reject all pending suggestions for a train
+```
+Approval flow:
+```text
+suggestions.status = 'approved'
+copy suggestion into links
+links.added_by = 'public_approved'
+```
+Do not directly expose suggestions on public pages.
+---
+## Security Hardening
+### Authentication
+Do:
+```text
+Use bcrypt or argon2id password hashing.
+Use secure random session tokens.
+Store sessions server-side.
+Set HttpOnly, Secure, SameSite=Lax cookies.
+Add CSRF tokens to all admin forms.
+```
+Do not rely on `/admin/secret` as real security.
+### Admin Path
+Fine to use:
+```text
+/admin/secret
+```
+But treat it only as obscurity.
+Real protection must be:
+```text
+password + session + CSRF + rate limiting
+```
+### Input Safety
+Do:
+```text
+Use prepared SQL statements.
+Escape all HTML output.
+Validate slugs.
+Normalize URLs.
+Reject javascript:, data:, file:, ftp: URLs.
+Only allow http/https.
+```
+### Headers
+Set:
+```text
+Content-Security-Policy: default-src 'self'; img-src 'self' https:; frame-src https://www.youtube.com https://player.vimeo.com; object-src 'none';
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+```
+---
+## Suggested Pages
+Public:
+```text
+/
+/corridors
+/corridors/{slug}
+/trains/{slug}
+/trains/{slug}/suggest
+```
+Admin:
+```text
+/admin/secret/login
+/admin/secret/trains
+/admin/secret/corridors
+/admin/secret/trains/{id}
+/admin/secret/trains/{id}/suggestions
+```
+---
+## Recommendation
+Build this as a moderation-first directory, not a social site.
+Best MVP:
+1. Seed corridors and trains.
+2. Public train list and train detail pages.
+3. Admin login.
+4. Admin CRUD for trains and links.
+5. Public suggestion form.
+6. Admin approve/reject queue.
+7. Rate limiting and domain allowlist.
+Avoid uploads, comments, accounts, ratings, and open-ended links until the site has real traffic.
+Missing updated_at trigger. SQLite doesn't auto-update it. You need:
+sqlCREATE TRIGGER links_updated_at
+AFTER UPDATE ON links
+BEGIN
+UPDATE links SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+Repeat for all tables with updated_at.
+Missing sessions table — you mentioned server-side sessions but didn't define the table:
+sqlCREATE TABLE sessions (
+id TEXT PRIMARY KEY, -- crypto/rand hex, 32+ bytes
+admin_user_id INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+expires_at TEXT NOT NULL,
+ip_hash TEXT,
+user_agent TEXT
+);
+CREATE INDEX idx_sessions_expires ON sessions(expires_at);
+Missing audit_log — for an admin tool managing public content, you want a record of who approved/rejected what:
+sqlCREATE TABLE audit_log (
+id INTEGER PRIMARY KEY,
+admin_user_id INTEGER REFERENCES admin_users(id),
+action TEXT NOT NULL, -- 'approve_suggestion', 'reject_suggestion', 'edit_train', etc.
+entity_type TEXT NOT NULL, -- 'suggestion', 'train', 'link'
+entity_id INTEGER NOT NULL,
+detail TEXT, -- JSON blob of before/after or extra context
+created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+suggestions.submitter_user_agent TEXT — store raw UA only if you need it for abuse analysis. It's somewhat PII-adjacent. Fine to keep, but trim it at 200 chars.
+Anti-Spam Hardening
+The list is good. These are the gaps:
+Rate limiting needs a backing table, not just in-memory state. If the process restarts, limits reset. Add:
+sqlCREATE TABLE rate_limit_log (
+id INTEGER PRIMARY KEY,
+ip_hash TEXT NOT NULL,
+action TEXT NOT NULL DEFAULT 'suggest',
+created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_rate_limit_ip_time ON rate_limit_log(ip_hash, created_at);
+Query count WHERE created_at > datetime('now', '-1 hour'). Purge rows older than 24h on a background tick.
+Honeypot field name matters. Don't call it honeypot. Call it something plausible:
+html<input type="text" name="website" autocomplete="off" tabindex="-1" 
+style="position:absolute;left:-9999px" aria-hidden="true">
+Timing check should be server-side. Client-side timing is trivially bypassed. Store a hidden form token with a timestamp in the session or a signed cookie, then validate server-side that at least 4 seconds elapsed between token issuance and form submission.
+URL normalization steps to enforce:
+Lowercase scheme and host
+Strip tracking params (?utm_*, ?fbclid, etc.)
+Normalize YouTube: youtu.be/xyz → youtube.com/watch?v=xyz before dedup check
+Strip trailing slashes
+Reject URLs with auth components (user:pass@host)
+Deduplication scope: Check for duplicate pending and already-approved links, not just pending:
+sqlSELECT 1 FROM suggestions WHERE train_id = ? AND url = ? AND status = 'pending'
+UNION
+SELECT 1 FROM links WHERE train_id = ? AND url = ?
+Security Hardening
+Authentication gaps:
+Add login attempt throttling with lockout — not covered in the schema:
+sqlCREATE TABLE login_attempts (
+id INTEGER PRIMARY KEY,
+ip_hash TEXT NOT NULL,
+username TEXT,
+succeeded INTEGER NOT NULL DEFAULT 0,
+created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+Block IPs with 5+ failed attempts in 15 minutes.
+Session token generation in Go:
+gofunc newSessionToken() string {
+b := make([]byte, 32)
+_, err := rand.Read(b)
+if err != nil {
+panic(err)
+}
+return hex.EncodeToString(b)
+}
+64-char hex token, HttpOnly; Secure; SameSite=Lax; Path=/admin; Max-Age=86400.
+CSRF implementation note: Use the double-submit cookie pattern or a synchronizer token stored in the session. Don't generate CSRF tokens from static secrets — use crypto/rand per session.
+Missing: session expiry enforcement on read. When loading a session from the DB, always check expires_at > CURRENT_TIMESTAMP. Add a background goroutine to purge expired sessions every hour.
+CSP adjustment: Your current CSP allows img-src 'self' https: which is broad. Tighten for the public pages:
+img-src 'self' https://i.imgur.com https://live.staticflickr.com https://i.ytimg.com https://vumbnail.com;
+For admin pages you can be more permissive.
+Missing: Permissions-Policy header:
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+SQL injection note: With Go's database/sql and ? placeholders, you're protected as long as you never use fmt.Sprintf to build queries. Add a linter rule or code review checklist item for this.
+URL Validation Logic
+The allowlist approach is correct. Implement as a two-stage check in Go:
+govar allowedDomains = map[string]string{
+"youtube.com": "video",
+"youtu.be": "video",
+"vimeo.com": "video",
+"flickr.com": "image",
+"imgur.com": "image",
+"railpictures.net": "image",
+"rrpicturearchives.net": "image",
+}
+func classifyPublicURL(raw string) (domain, linkType string, ok bool) {
+u, err := url.Parse(strings.TrimSpace(raw))
+if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+return "", "", false
+}
+host := strings.ToLower(u.Hostname())
+host = strings.TrimPrefix(host, "www.")
+t, found := allowedDomains[host]
+if !found {
+return "", "", false
+}
+return host, t, true
+}
+Auto-populate link_type from this — don't trust the user's submitted link_type.
+Admin UX Recommendations
+Bulk approve/reject should use a transaction and the audit log atomically:
+sqlBEGIN;
+INSERT INTO audit_log ...;
+UPDATE suggestions SET status = 'approved', reviewed_at = ..., reviewed_by = ? 
+WHERE train_id = ? AND status = 'pending';
+INSERT INTO links (train_id, url, title, link_type, source_domain, added_by)
+SELECT train_id, url, title, link_type, source_domain, 'public_approved'
+FROM suggestions WHERE train_id = ? AND status = 'pending';
+COMMIT;
+Hero image enforcement in admin UI: When the admin marks a new hero, the UI should show the current hero with a warning before replacing it, not silently swap.
+also consider having a suggestions page for all suggestions for easy review/approval, and seed the trains into the scema and seed the admin user admin is the username secret is the password, but dont show that anywhere in url or pages or anything it is secret.
+
+

@@ -1,0 +1,60 @@
+{{define "title"}}{{.Data.ProfileUser.Username}} — {{siteName}}{{end}}
+{{define "content"}}
+{{$d := .Data}}
+<div class="container" style="padding-top:1.5rem">
+  {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+
+  <h1 style="font-size:1.6rem;font-weight:700;margin-bottom:.25rem">{{$d.ProfileUser.Username}}</h1>
+  <p style="color:var(--muted);margin-bottom:1rem">Joined {{$d.ProfileUser.CreatedAt}} · {{$d.ProfileUser.StatusLabel}}</p>
+
+  {{if $d.Badges}}
+  <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem">
+    {{range $d.Badges}}
+    <span style="display:inline-flex;align-items:center;gap:.35rem;background:var(--card-bg);border:1px solid var(--border);border-radius:999px;padding:.35rem .75rem;font-size:.85rem">
+      <span style="font-size:1.1rem">{{.Emoji}}</span> {{.Label}}
+    </span>
+    {{end}}
+  </div>
+  {{else}}
+  <p style="color:var(--muted);margin-bottom:1.5rem">No badges yet — keep submitting!</p>
+  {{end}}
+
+  <h2 class="section-heading">Submissions</h2>
+  {{if $d.Submissions}}
+  <table class="admin-table">
+    <thead><tr><th>Train</th><th>Title</th><th>Type</th><th>Rarities</th><th>Status</th><th>Submitted</th></tr></thead>
+    <tbody>
+      {{range $d.Submissions}}
+      <tr>
+        <td><a href="/trains/{{.TrainSlug}}">{{.TrainName}}</a></td>
+        <td style="max-width:200px;font-size:.85rem">{{if .Title}}{{truncate .Title 80}}{{else}}<span style="color:var(--muted)">—</span>{{end}}</td>
+        <td>{{mediaLabel .MediaType}}</td>
+        <td>{{range rarityBadges .Tags}}<span title="{{.Label}}" style="margin-right:.3rem">{{.Emoji}}</span>{{else}}<span style="color:var(--muted)">—</span>{{end}}</td>
+        <td><span class="status-badge status-{{.Status}}">{{.StatusLabel}}</span></td>
+        <td style="font-size:.8rem;color:var(--muted)">{{.CreatedAt}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p style="color:var(--muted);padding:1.5rem 0">No submissions yet.</p>
+  {{end}}
+
+  <h2 class="section-heading" style="margin-top:2rem">Comments</h2>
+  {{if $d.Comments}}
+  <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:.75rem">
+    {{range $d.Comments}}
+    <li style="border:1px solid var(--border);border-radius:6px;padding:.75rem 1rem">
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.3rem">
+        <a href="/trains/{{.TrainSlug}}#comments" style="font-weight:600">{{.TrainName}}</a>
+        <span style="margin:0 .35rem">·</span>{{.CreatedAt}}
+      </div>
+      <div style="white-space:pre-wrap;word-break:break-word;font-size:.9rem">{{.Body}}</div>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p style="color:var(--muted);padding:1.5rem 0">No approved comments yet.</p>
+  {{end}}
+</div>
+{{end}}

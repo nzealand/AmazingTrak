@@ -1,0 +1,61 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+<div style="margin-bottom:.75rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+  <a href="{{.AdminPrefix}}/comments" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter ""}} btn-primary{{end}}">All</a>
+  <a href="{{.AdminPrefix}}/comments?status=pending" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter "pending"}} btn-primary{{end}}">Pending</a>
+  <a href="{{.AdminPrefix}}/comments?status=approved" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter "approved"}} btn-primary{{end}}">Approved</a>
+  <a href="{{.AdminPrefix}}/comments?status=rejected" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter "rejected"}} btn-primary{{end}}">Rejected</a>
+  <span style="color:var(--border);margin:0 .25rem">|</span>
+  <form method="post" action="{{.AdminPrefix}}/comments/approve-all-pending" onsubmit="return confirm('Approve all pending comments?')">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="btn btn-sm btn-primary" type="submit">Approve All Pending</button>
+  </form>
+  <form method="post" action="{{.AdminPrefix}}/comments/reject-all-pending" onsubmit="return confirm('Reject all pending comments?')">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="btn btn-sm btn-danger" type="submit">Reject All Pending</button>
+  </form>
+  <form method="post" action="{{.AdminPrefix}}/comments/delete-all-rejected" onsubmit="return confirm('Permanently delete all rejected comments?')">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="btn btn-sm btn-danger" type="submit">Delete All Rejected</button>
+  </form>
+</div>
+{{if $d.Comments}}
+<table class="admin-table">
+  <thead><tr><th>Train</th><th>User</th><th>Comment</th><th>Status</th><th>Submitted</th><th style="width:18%">Actions</th></tr></thead>
+  <tbody>
+    {{range $d.Comments}}
+    <tr>
+      <td><a href="/trains/{{.TrainSlug}}#comments" target="_blank">{{.TrainName}}</a></td>
+      <td><a href="/users/{{.Username}}" target="_blank">{{.Username}}</a></td>
+      <td style="max-width:340px;font-size:.85rem;white-space:pre-wrap;word-break:break-word">{{.Body}}</td>
+      <td><span class="status-badge status-{{.Status}}">{{.Status}}</span></td>
+      <td style="font-size:.8rem;color:var(--muted)">{{.CreatedAt}}</td>
+      <td>
+        {{if eq .Status "pending"}}
+        <div style="display:flex;gap:.3rem;align-items:flex-start;flex-wrap:wrap">
+          <form method="post" action="{{$.AdminPrefix}}/comments/{{.ID}}/approve">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-primary" type="submit">Approve</button>
+          </form>
+          <form method="post" action="{{$.AdminPrefix}}/comments/{{.ID}}/reject">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-danger" type="submit">Reject</button>
+          </form>
+        </div>
+        {{else if eq .Status "approved"}}
+        <form method="post" action="{{$.AdminPrefix}}/comments/{{.ID}}/unapprove" onsubmit="return confirm('Unapprove this comment and hide it from the train page?')">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="btn btn-sm btn-secondary" type="submit">Unapprove</button>
+        </form>
+        {{else}}
+        {{if .RejectionReason}}<span style="font-size:.8rem;color:var(--muted)">{{.RejectionReason}}</span>{{else}}<span style="color:var(--muted)">—</span>{{end}}
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p style="color:var(--muted);padding:2rem 0">No comments{{if $d.StatusFilter}} with status "{{$d.StatusFilter}}"{{end}}.</p>
+{{end}}
+{{end}}

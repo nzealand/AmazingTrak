@@ -1,0 +1,95 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+<div style="display:flex;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap">
+  <a href="{{.AdminPrefix}}/trains/{{$d.Train.ID}}/media" class="btn btn-secondary">Manage Media</a>
+  <a href="{{.AdminPrefix}}/trains/{{$d.Train.ID}}/stops" class="btn btn-secondary">Manage Stops</a>
+  <a href="/trains/{{$d.Train.Slug}}" target="_blank" class="btn btn-secondary">View Public Page ↗</a>
+  <form method="post" action="{{.AdminPrefix}}/trains/{{$d.Train.ID}}/toggle">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="btn btn-secondary" type="submit">{{if $d.Train.IsActive}}Deactivate{{else}}Activate{{end}}</button>
+  </form>
+</div>
+
+<form method="post" action="{{.AdminPrefix}}/trains/{{$d.Train.ID}}" class="admin-form">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">Display Name *</label>
+      <input class="form-input" type="text" name="display_name" value="{{$d.Train.DisplayName}}" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Slug *</label>
+      <input class="form-input" type="text" name="slug" value="{{$d.Train.Slug}}" required>
+      <div class="form-hint">URL: /trains/{slug}</div>
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">Train Number *</label>
+      <input class="form-input" type="text" name="train_number" value="{{$d.Train.TrainNumber}}" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Corridor</label>
+      <select class="form-select" name="corridor_id">
+        {{range $d.Corridors}}
+        <option value="{{.ID}}" {{if eq $d.Train.CorridorID .ID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Sort Order</label>
+      <input class="form-input" type="number" name="sort_order" value="{{$d.Train.SortOrder}}">
+    </div>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Direction</label>
+    <input class="form-input" type="text" name="direction" value="{{$d.Train.Direction}}" placeholder="e.g. Eastbound">
+  </div>
+  <div class="form-group">
+    <label class="form-label">Notes</label>
+    <textarea class="form-textarea" name="notes" rows="3">{{$d.Train.Notes}}</textarea>
+  </div>
+  <div class="btn-group">
+    <button class="btn btn-primary" type="submit">Save Changes</button>
+    <a href="{{.AdminPrefix}}/trains" class="btn btn-secondary">Back to Trains</a>
+  </div>
+</form>
+
+{{if $d.Train.HeroImageURL}}
+<div style="margin-top:2rem">
+  <p style="font-size:.9rem;font-weight:500;margin-bottom:.5rem">Current Hero Image</p>
+  <img src="{{$d.Train.HeroImageURL}}" style="max-width:320px;border-radius:.5rem;border:1px solid var(--border)" alt="Hero">
+  <p style="font-size:.8rem;color:var(--muted);margin-top:.35rem">Change via <a href="{{.AdminPrefix}}/trains/{{$d.Train.ID}}/media">Media page</a></p>
+</div>
+{{end}}
+
+{{if $d.Suggestions}}
+<h3 class="section-heading" style="margin-top:2rem">Pending Suggestions ({{len $d.Suggestions}})</h3>
+<table class="admin-table">
+  <thead><tr><th>URL</th><th>Type</th><th>Comment</th><th>Tags</th><th>Submitted</th><th>Actions</th></tr></thead>
+  <tbody>
+    {{range $d.Suggestions}}
+    <tr>
+      <td style="max-width:260px;word-break:break-all"><a href="{{.URL}}" target="_blank" rel="noopener">{{truncate .URL 55}}</a></td>
+      <td>{{mediaLabel .MediaType}}</td>
+      <td style="max-width:160px;font-size:.85rem;color:var(--muted)">{{if .Caption}}{{truncate .Caption 70}}{{else}}—{{end}}</td>
+      <td style="font-size:.8rem;color:var(--muted)">{{range $i,$t := videoTags .Tags}}{{if $i}}, {{end}}{{$t}}{{end}}{{if not (videoTags .Tags)}}—{{end}}</td>
+      <td style="font-size:.8rem;color:var(--muted)">{{.CreatedAt}}</td>
+      <td>
+        <div class="btn-group">
+          <form method="post" action="{{$.AdminPrefix}}/suggestions/{{.ID}}/approve">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-primary" type="submit">Approve</button>
+          </form>
+          <form method="post" action="{{$.AdminPrefix}}/suggestions/{{.ID}}/reject">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-danger" type="submit">Reject</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{end}}

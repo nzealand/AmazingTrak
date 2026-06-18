@@ -1,0 +1,116 @@
+{{define "title"}}Amtrak Route Map — {{siteName}}{{end}}
+{{define "head"}}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css">
+<style>
+#map-wrap {
+  position: relative;
+  height: calc(100vh - 120px);
+  min-height: 480px;
+}
+#amtrak-map {
+  width: 100%;
+  height: 100%;
+}
+#map-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: .95rem;
+  z-index: 1000;
+  pointer-events: none;
+}
+</style>
+{{end}}
+{{define "content"}}
+<div id="map-wrap">
+  <div id="amtrak-map"></div>
+  <div id="map-loading">Loading route map…</div>
+</div>
+<div style="padding:.4rem 1rem;font-size:.75rem;color:var(--muted);border-top:1px solid var(--border);display:flex;justify-content:space-between;flex-wrap:wrap;gap:.25rem">
+  <span>Route data from <a href="https://data-usdot.opendata.arcgis.com/datasets/usdot::amtrak-routes" target="_blank" rel="noopener" style="color:var(--muted)">USDOT NTAD</a>. Click a route for details.</span>
+  <span id="map-route-count"></span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script>
+function jsSlugify(s) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+function normSlug(s) {
+  return s.replace(/^amtrak-/, '');
+}
+// Map of normalized slug (leading "amtrak-" stripped) -> actual corridor slug.
+var CORRIDOR_BY_NORM = {};
+{{range .Data}}{{if .Slug}}CORRIDOR_BY_NORM[normSlug("{{.Slug}}")] = "{{.Slug}}";
+{{end}}{{end}}
+function findCorridorSlug(name) {
+  var norm = normSlug(jsSlugify(name));
+  return CORRIDOR_BY_NORM[norm] || null;
+}
+</script>
+<script>
+(function() {
+  var COLORS = [
+    '#e63946','#2a9d8f','#457b9d','#f4a261','#6a4c93',
+    '#e76f51','#118ab2','#f72585','#4361ee','#06d6a0',
+    '#3a86ff','#8338ec','#fb5607','#d62828','#ef476f',
+    '#264653','#ffd166','#06aed5','#a8dadc','#ffbe0b'
+  ];
+
+  var map = L.map('amtrak-map', {
+    center: [39.5, -98.35],
+    zoom: 4,
+    scrollWheelZoom: true
+  });
+
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 18
+  }).addTo(map);
+
+  var loading = document.getElementById('map-loading');
+
+  fetch('/api/amtrak-routes')
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data) {
+      loading.style.display = 'none';
+      var features = data.features || [];
+      var countEl = document.getElementById('map-route-count');
+      if (countEl) countEl.textContent = features.length + ' routes';
+
+      features.forEach(function(feature, i) {
+        var props = feature.properties || {};
+        var name = props.name || 'Amtrak Route';
+        var routeUrl = props.ROUTE_URL || '';
+        var color = COLORS[i % COLORS.length];
+
+        var displayName = name.replace(/^amtrak\s+/i, '');
+        var popup = '<strong style="font-size:.9rem">' + displayName + '</strong>';
+        var corridorSlug = findCorridorSlug(name);
+        if (corridorSlug) {
+          popup += '<br><a href="/corridors/' + corridorSlug + '" style="font-size:.82rem">' + displayName + ' →</a>';
+        }
+        if (routeUrl) {
+          popup += '<br><a href="' + routeUrl + '" target="_blank" rel="noopener" style="font-size:.82rem">Amtrak schedule →</a>';
+        }
+
+        L.geoJSON(feature, {
+          style: { color: color, weight: 3, opacity: .85 }
+        }).addTo(map).bindPopup(popup);
+      });
+    })
+    .catch(function(err) {
+      loading.textContent = 'Could not load route data — try refreshing.';
+      loading.style.pointerEvents = 'auto';
+      console.error('Amtrak routes error:', err);
+    });
+})();
+</script>
+{{end}}

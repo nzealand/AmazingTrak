@@ -1,0 +1,196 @@
+Acela Express
+816, 817, 880, 2102, 2103, 2104, 2108, 2109, 2110, 2113, 2115, 2121, 2122, 2123, 2124, 2126, 2130, 2150, 2151, 2152, 2153, 2154, 2155, 2159, 2162, 2163, 2166, 2167, 2168, 2169, 2170, 2171, 2172, 2173, 2174, 2190, 2192, 2193, 2201, 2203, 2205, 2206, 2207, 2214, 2215, 2216, 2218, 2220, 2222, 2223, 2224, 2226, 2228, 2233, 2247, 2248, 2249, 2250, 2251, 2252, 2253, 2254, 2255, 2256, 2257, 2258, 2259, 2262, 2263, 2265, 2271, 2274, 2275, 2290, 2292, 2295
+
+Adirondack
+68, 69
+
+Amtrak Cascades
+500, 502, 503, 504, 505, 506, 507, 508, 509, 511, 516, 517, 518, 519
+
+Auto Train
+52, 53
+
+Berkshire Flyer
+1233, 1234, 1246
+
+Blue Water/Michigan Service
+364, 365, 1364
+
+Borealis
+1333, 1340
+
+California Zephyr
+5, 6(2), 1005, 1006
+
+Capitol Corridor
+520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530, 531, 532, 534, 535, 536, 537, 538, 539, 540, 541, 542, 543, 544, 545, 546, 547, 548, 549, 550, 551, 720, 723, 724, 727, 728, 729, 732, 733, 734, 736, 737, 738, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750, 751
+
+Cardinal
+50, 51
+
+Carolinian / Piedmont
+71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 105, 1072, 1075, 1123, 1171, 1172
+
+City of New Orleans
+58, 59, 1058, 1059
+
+Coast Starlight
+11(2), 14(2), 1011, 1014
+
+Crescent
+19(2), 20(2), 1019, 1020
+
+Downeaster
+680, 681, 682, 683, 684, 685, 686, 687, 688, 689, 690, 691, 692, 693, 694, 695, 696, 697, 698, 699, 1689, 1697
+
+Empire Builder
+7(2), 8(2), 27, 28, 1007, 1008, 1027, 1028
+
+Empire Service
+230, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 243, 244, 245, 280, 281, 283, 284, 1237
+
+Ethan Allen Express
+290, 291
+
+Floridian
+40(2), 41(2), 1040, 1041
+
+Gold Runner
+701, 702, 703, 704, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 1701, 1702, 1703, 1704, 1710, 1711, 1712, 1715, 1716, 1717, 1718, 1719
+
+Heartland Flyer
+821, 822
+
+Hiawatha
+329, 330, 331, 332, 334, 335, 336, 337, 338, 339, 341, 342, 343
+
+Illinois Zephyr/Carl Sandburg
+380, 381, 382, 383
+
+Keystone
+110, 123, 600, 601, 605, 607, 609, 610, 611, 612, 615, 620, 622, 623, 624, 626, 637, 639, 640, 641, 642, 643, 644, 645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655, 656, 657, 658, 660, 661, 662, 663, 664, 665, 666, 667, 669, 670, 671, 672, 674
+
+Lake Shore Limited
+48, 49, 448, 449
+
+Lincoln Service Missouri River Runner
+318, 319
+
+Lincoln Service/Illinois Service
+301, 302, 305, 307
+
+Lincoln Service/Michigan Service
+300, 306
+
+Maple Leaf
+63, 64
+
+Mardi Gras Service
+23, 24, 25, 26
+
+Missouri River Runner
+311, 316
+
+Northeast Regional
+65, 66, 67, 82, 84, 85, 86, 87, 88, 93, 94, 95, 96, 99, 101, 103, 104, 106, 108, 109, 111, 112, 113, 114, 116, 118, 119, 120, 121, 122, 124, 125, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 181, 182, 183, 184, 185, 186, 189, 190, 192, 193, 194, 195, 197, 198, 400, 405, 409, 416, 417, 425, 426, 450, 460, 461, 463, 464, 465, 467, 470, 471, 473, 474, 475, 478, 479, 486, 488, 490, 494, 495, 497, 499, 630, 632, 636, 1108, 1161, 1175, 1194, 2107, 2117
+
+Northest Regional
+100, 102, 117, 126, 196, 199, 627, 631, 806, 807, 887, 888, 1195
+
+Pacific Surfliner
+562, 564, 566, 567, 572, 573, 577, 579, 580, 581, 582, 584, 586, 587, 588, 591, 593, 595, 757, 761, 765, 769, 770, 774, 777, 779, 782, 784, 785, 786, 790, 791, 794, 1562, 1591, 1595, 1765, 1769, 1770, 1774, 1777, 1784, 1785, 1790
+
+Palmetto
+90
+
+Pennsylvanian
+42, 43
+
+Pere Marquette/Michigan Service
+370, 371
+
+Saluki/Illinois Service
+390, 391, 392, 393
+
+Silver Meteor
+97(2), 98, 1098
+
+Silver Service / Palmetto
+89
+
+Southwest Chief
+3, 4(2), 1003, 1004
+
+Sunset Limited
+1, 2
+
+Texas Eagle
+21, 22(2), 1021, 1022
+
+Vermonter
+54, 55, 56, 57, 107
+
+Winter Park Express
+1105, 1106
+
+Wolverine/Michigan Service
+350, 351, 352, 353, 354, 355, 1354
+
+
+FY2026 Q1 OTP Data — paste this block into your prompt:
+Seed the following into corridors.on_time_percent and corridors.service_quality_summary.
+Data source: FRA Quarterly Report FY2026 Q1 (Oct–Dec 2025). OTP = % customers arriving
+within 15 minutes of scheduled arrival.
+
+NEC / Northeast Corridor service line overall: 78%
+Long Distance service line overall: 66%
+State Supported service line overall: 80%
+
+Route-level OTP (FY2026 Q1):
+Acela: 76%
+Northeast Regional (On Spine): 80%
+Richmond/Newport News/Norfolk: 76%
+Roanoke: 82%
+Springfield Shuttles: 88%
+Adirondack: 63%
+Blue Water: 69%
+Borealis: 74%
+Capitol Corridor: 89%
+Carl Sandburg / Illinois Zephyr: 73%
+Carolinian: 71%
+Cascades (Amtrak Cascades): 76%
+Downeaster: 86%
+Ethan Allen Express: 70%
+Gold Runner (formerly San Joaquins): 63%
+Heartland Flyer: 57%
+Hiawatha: 87%
+Illini / Saluki: 72%
+Keystone: 90%
+Lincoln / Missouri (combined): 51%
+Lincoln Service (Illinois portion): 68%
+Missouri (Missouri portion): 77%
+Maple Leaf: 59%
+Mardi Gras Service: 88%
+New York - Albany: 86%
+New York - Niagara Falls: 83%
+Pacific Surfliner: 85%
+Pennsylvanian: 89%
+Pere Marquette: 82%
+Piedmont: 76%
+Vermonter: 72%
+Wolverine: 66%
+Auto Train: 83%
+California Zephyr: 71%
+Cardinal: 56%
+City of New Orleans: 78%
+Coast Starlight: 68%
+Crescent: 76%
+Empire Builder: 61%
+Floridian: 44%
+Lake Shore Limited: 78%
+Palmetto: 83%
+Silver Meteor: 67%
+Southwest Chief: 40%
+Sunset Limited: 75%
+Texas Eagle: 62%
+

@@ -1,0 +1,57 @@
+{{define "base"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{block "title" .}}{{siteName}}{{end}}</title>
+<link rel="stylesheet" href="/static/style.css?v={{staticVer}}">
+{{if faviconURL}}<link rel="icon" href="{{faviconURL}}">{{end}}
+{{siteAccentStyle}}
+<script src="/static/theme.js?v={{staticVer}}"></script>
+{{block "head" .}}{{end}}
+</head>
+<body>
+<nav class="site-nav">
+  <a href="/" class="brand">🚆 {{siteName}}</a>
+  <div class="nav-links">
+    <a href="/">Corridors</a>
+    <a href="/trains-list">Trains</a>
+    <a href="/map">Map</a>
+    <a href="/overview">Overview</a>
+  </div>
+  <div class="nav-spacer"></div>
+  <div class="account-controls" style="display:flex;align-items:center;gap:.6rem;margin-right:.6rem;font-size:.9rem">
+    {{if .CurrentUser}}
+      <a href="/users/{{.CurrentUser.Username}}" style="opacity:.8">Hi, {{.CurrentUser.Username}}</a>
+      <form method="post" action="/logout" style="display:contents">
+        <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
+        <button class="theme-btn" type="submit" title="Log out" style="width:auto;padding:0 .5rem">Log out</button>
+      </form>
+    {{else}}
+      <a href="/login">Log in</a>
+      <a href="/register">Register</a>
+    {{end}}
+  </div>
+  <div class="theme-controls">
+    <form method="post" action="/theme" style="display:contents">
+      <button class="theme-btn" name="theme" value="light" data-theme="light" type="submit" title="Light mode">☀</button>
+      <button class="theme-btn" name="theme" value="auto"  data-theme="auto"  type="submit" title="Auto">🌓</button>
+      <button class="theme-btn" name="theme" value="dark"  data-theme="dark"  type="submit" title="Dark mode">🌙</button>
+    </form>
+  </div>
+</nav>
+<main>
+{{block "content" .}}{{end}}
+</main>
+<footer>
+  <div class="container">
+    {{siteName}} — Amtrak train tracker &copy; {{year}}
+  </div>
+</footer>
+</body>
+</html>
+{{end}}
+
+{{define "contributorLink"}}
+{{if .UserID.Valid}}<a href="/users/{{.ContributorName}}" title="Log in to view this contributor's profile">{{.ContributorName}}</a>{{else}}{{.Contributor}}{{end}}
+{{end}}

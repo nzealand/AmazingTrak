@@ -1,0 +1,127 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+<div style="margin-bottom:1.25rem;display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+  <form method="post" action="{{.AdminPrefix}}/trains/new" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end;flex:1">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="form-group" style="margin:0;flex:1;min-width:180px">
+      <label class="form-label" style="font-size:.8rem">Corridor</label>
+      <select class="form-select" name="corridor_id" required>
+        {{range $d.Corridors}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+      </select>
+    </div>
+    <div class="form-group" style="margin:0;flex:1;min-width:100px">
+      <label class="form-label" style="font-size:.8rem">Train #</label>
+      <input class="form-input" type="text" name="train_number" placeholder="e.g. 742" required>
+    </div>
+    <div class="form-group" style="margin:0;flex:2;min-width:180px">
+      <label class="form-label" style="font-size:.8rem">Display Name</label>
+      <input class="form-input" type="text" name="display_name" placeholder="e.g. Amtrak 742" required>
+    </div>
+    <button class="btn btn-primary btn-sm" type="submit">+ Add Train</button>
+  </form>
+  <form method="post" action="{{.AdminPrefix}}/trains/delete-inactive" onsubmit="return confirm('Permanently delete all deactivated trains and their media?')">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="btn btn-sm btn-danger" type="submit">Delete All Deactivated</button>
+  </form>
+</div>
+<table class="admin-table" id="train-table">
+  <thead>
+    <tr>
+      <th data-sort="train" style="cursor:pointer">Train <span class="sort-ind">⬍</span></th>
+      <th data-sort="number" style="cursor:pointer">Number <span class="sort-ind">⬍</span></th>
+      <th data-sort="corridor" style="cursor:pointer">Corridor <span class="sort-ind">⬍</span></th>
+      <th data-sort="media" style="cursor:pointer">Media <span class="sort-ind">⬍</span></th>
+      <th data-sort="thumb" style="cursor:pointer">Thumb <span class="sort-ind">⬍</span></th>
+      <th data-sort="video" style="cursor:pointer">Video <span class="sort-ind">⬍</span></th>
+      <th data-sort="pending" style="cursor:pointer">Pending <span class="sort-ind">⬍</span></th>
+      <th data-sort="status" style="cursor:pointer">Status <span class="sort-ind">⬍</span></th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody id="train-tbody">
+    {{range $d.Trains}}
+    <tr class="{{if not .IsActive}}inactive-row{{end}}"
+        data-train="{{.DisplayName}}"
+        data-number="{{.TrainNumber}}"
+        data-corridor="{{.CorridorName}}"
+        data-media="{{.MediaCount}}"
+        data-thumb="{{if .ThumbnailMediaID.Valid}}1{{else}}0{{end}}"
+        data-video="{{if gt .VideoCount 0}}1{{else}}0{{end}}"
+        data-pending="{{.PendingCount}}"
+        data-status="{{if .IsActive}}1{{else}}0{{end}}">
+      <td><a href="{{$.AdminPrefix}}/trains/{{.ID}}/media">{{.DisplayName}}</a></td>
+      <td>{{.TrainNumber}}</td>
+      <td>{{.CorridorName}}</td>
+      <td>{{.MediaCount}}</td>
+      <td>{{if .ThumbnailMediaID.Valid}}<span style="color:#16a34a">✓</span>{{else}}<span style="color:#dc2626;font-weight:700">✗</span>{{end}}</td>
+      <td>{{if gt .VideoCount 0}}<span style="color:#16a34a">✓</span>{{else}}<span style="color:#dc2626;font-weight:700">✗</span>{{end}}</td>
+      <td>{{if gt .PendingCount 0}}<span style="color:#dc2626;font-weight:600">{{.PendingCount}}</span>{{else}}0{{end}}</td>
+      <td>{{if .IsActive}}Active{{else}}Inactive{{end}}</td>
+      <td>
+        <div class="btn-group">
+          <a href="{{$.AdminPrefix}}/trains/{{.ID}}/media" class="btn btn-sm btn-secondary">Media</a>
+          <a href="{{$.AdminPrefix}}/trains/{{.ID}}" class="btn btn-sm btn-secondary">Edit</a>
+          <form method="post" action="{{$.AdminPrefix}}/trains/{{.ID}}/toggle">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-secondary" type="submit">{{if .IsActive}}Deactivate{{else}}Activate{{end}}</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+<script>
+(function() {
+  var tbody = document.getElementById('train-tbody');
+  var headers = document.querySelectorAll('#train-table th[data-sort]');
+  var sortCol = null, sortDir = 1;
+  var numericCols = {media:1, thumb:1, video:1, pending:1, status:1, number:1};
+
+  function getRows() { return Array.from(tbody.querySelectorAll('tr')); }
+
+  function applySort(col, dir) {
+    var rows = getRows();
+    var numeric = !!numericCols[col];
+    rows.sort(function(a, b) {
+      var av = a.getAttribute('data-' + col) || '';
+      var bv = b.getAttribute('data-' + col) || '';
+      return numeric ? (parseFloat(av) - parseFloat(bv)) * dir : av.localeCompare(bv) * dir;
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+    headers.forEach(function(th) {
+      var ind = th.querySelector('.sort-ind');
+      if (ind) ind.textContent = th.dataset.sort === col ? (dir === 1 ? '▲' : '▼') : '⬍';
+    });
+  }
+
+  function defaultSort() {
+    var rows = getRows();
+    rows.sort(function(a, b) {
+      var am = parseInt(a.getAttribute('data-media')) || 0;
+      var bm = parseInt(b.getAttribute('data-media')) || 0;
+      if (am !== bm) return am - bm;
+      var at = parseInt(a.getAttribute('data-thumb')) || 0;
+      var bt = parseInt(b.getAttribute('data-thumb')) || 0;
+      if (at !== bt) return at - bt;
+      var av = parseInt(a.getAttribute('data-video')) || 0;
+      var bv = parseInt(b.getAttribute('data-video')) || 0;
+      if (av !== bv) return av - bv;
+      return (parseInt(b.getAttribute('data-pending')) || 0) - (parseInt(a.getAttribute('data-pending')) || 0);
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+  }
+
+  headers.forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col = th.dataset.sort;
+      sortDir = sortCol === col ? -sortDir : 1;
+      sortCol = col;
+      applySort(col, sortDir);
+    });
+  });
+
+  defaultSort();
+})();
+</script>
+{{end}}
