@@ -1,0 +1,73 @@
+{{define "title"}}Schedule — {{.Data.Train.DisplayName}}{{end}}
+{{define "content"}}
+{{$d := .Data}}
+<div class="container" style="padding-top:1.5rem;max-width:820px">
+  <nav style="font-size:.85rem;color:var(--muted);margin-bottom:.75rem">
+    <a href="/corridors/{{$d.Train.CorridorSlug}}">{{$d.Train.CorridorName}}</a> ›
+    <a href="/trains/{{$d.Train.Slug}}">{{$d.Train.DisplayName}}</a> ›
+    <a href="/trains/{{$d.Train.Slug}}/edit">Edit</a> › Schedule
+  </nav>
+  <div class="page-header">
+    <h1>Route &amp; Schedule</h1>
+    <p class="subtitle">{{$d.Train.DisplayName}} — set arrival/departure times and which days the train runs.</p>
+  </div>
+
+  {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+
+  <div style="margin-bottom:1rem">
+    <a href="/trains/{{$d.Train.Slug}}/edit" class="btn btn-secondary btn-sm">← Back to Edit Train</a>
+  </div>
+
+  {{if not $d.Stops}}
+  <p style="color:var(--muted);padding:2rem 0">No stops are configured for this train. Stops belong to the corridor — ask an admin to add stations to the corridor first.</p>
+  {{else}}
+  <form method="post" action="/trains/{{$d.Train.Slug}}/edit/stops">
+    <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border)">
+            <th style="text-align:left;padding:.5rem .6rem;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">Station</th>
+            <th style="text-align:left;padding:.5rem .6rem;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">Arrival</th>
+            <th style="text-align:left;padding:.5rem .6rem;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">Departure</th>
+            <th style="text-align:center;padding:.5rem .6rem;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">Weekday</th>
+            <th style="text-align:center;padding:.5rem .6rem;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">Weekend</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $d.Stops}}
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:.45rem .6rem;font-weight:500">
+              {{.StopName}}
+              {{if .StationCode}}<span style="font-size:.75rem;color:var(--muted);margin-left:.3rem">{{.StationCode}}</span>{{end}}
+            </td>
+            <td style="padding:.45rem .6rem">
+              <input type="text" name="arr_{{.ID}}" value="{{.ScheduledArrival}}"
+                placeholder="e.g. 9:40a"
+                style="width:7rem;padding:.3rem .45rem;font-size:.82rem;border:1px solid var(--border);border-radius:.25rem;background:var(--input-bg);color:var(--text)">
+            </td>
+            <td style="padding:.45rem .6rem">
+              <input type="text" name="dep_{{.ID}}" value="{{.ScheduledDeparture}}"
+                placeholder="e.g. 9:41a"
+                style="width:7rem;padding:.3rem .45rem;font-size:.82rem;border:1px solid var(--border);border-radius:.25rem;background:var(--input-bg);color:var(--text)">
+            </td>
+            <td style="padding:.45rem .6rem;text-align:center">
+              <input type="hidden" name="wkdy_{{.ID}}" value="0">
+              <input type="checkbox" name="wkdy_{{.ID}}" value="1" {{if .RunsWeekday}}checked{{end}}>
+            </td>
+            <td style="padding:.45rem .6rem;text-align:center">
+              <input type="hidden" name="wknd_{{.ID}}" value="0">
+              <input type="checkbox" name="wknd_{{.ID}}" value="1" {{if .RunsWeekend}}checked{{end}}>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:1rem">
+      <button type="submit" class="btn btn-primary">Save Schedule</button>
+    </div>
+  </form>
+  {{end}}
+</div>
+{{end}}

@@ -84,7 +84,7 @@ apt-get update -q
 info "Installing system dependencies…"
 apt-get install -y -q \
   curl git nginx certbot python3-certbot-nginx \
-  ufw logrotate ca-certificates
+  ufw logrotate ca-certificates sqlite3
 
 # ── Go ────────────────────────────────────────────────────────────────────────
 GO_TAR="go${GO_VERSION}.linux-amd64.tar.gz"
@@ -211,6 +211,17 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable "${SERVICE}"
+
+# ── SQLite pragmas ────────────────────────────────────────────────────────────
+DB_FILE="${DATA_DIR}/amazingtrak.db"
+if command -v sqlite3 &>/dev/null; then
+  info "Applying SQLite pragmas to ${DB_FILE}…"
+  sqlite3 "$DB_FILE" "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;"
+  chown "${APP_USER}:${APP_USER}" "${DB_FILE}" "${DB_FILE}-shm" "${DB_FILE}-wal" 2>/dev/null || true
+else
+  warn "sqlite3 not found — skipping pragma init (app will set them on first run)."
+fi
+
 systemctl restart "${SERVICE}"
 info "Service started."
 
@@ -232,6 +243,12 @@ LOGROTATE
 # ── nginx ─────────────────────────────────────────────────────────────────────
 info "Configuring nginx…"
 cat > "/etc/nginx/sites-available/${SERVICE}" <<NGINX
+# Rate-limit zones (defined at http context level — placed in site file for
+# self-containedness; nginx loads these before the server block).
+limit_req_zone \$binary_remote_addr zone=general:10m rate=10r/s;
+limit_req_zone \$binary_remote_addr zone=submit:10m  rate=2r/s;
+limit_req_zone \$binary_remote_addr zone=login:10m   rate=5r/m;
+
 server {
     listen 80;
     server_name ${DOMAIN};
@@ -239,14 +256,43 @@ server {
     # Max upload size (matches app's 32 MB body limit)
     client_max_body_size 32M;
 
+    # Security headers
+    add_header X-Content-Type-Options  "nosniff"          always;
+    add_header X-Frame-Options         "SAMEORIGIN"       always;
+    add_header Referrer-Policy         "same-origin"      always;
+    add_header X-XSS-Protection        "1; mode=block"    always;
+    add_header Permissions-Policy      "geolocation=(), camera=(), microphone=()" always;
+    # Tight CSP: inline styles/scripts are used by the app, so unsafe-inline is
+    # required; external resources are blocked unless explicitly listed.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.youtube.com https://player.vimeo.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; frame-src https://www.youtube.com https://player.vimeo.com; object-src 'none'; base-uri 'self';" always;
+
     # Static uploads — serve directly from disk without hitting Go
     location /uploads/ {
         alias ${DATA_DIR}/uploads/;
         expires 30d;
         add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options "nosniff" always;
+        # Only allow image MIME types from this directory
+        types { image/jpeg jpg jpeg; image/png png; image/gif gif; image/webp webp; }
+        default_type application/octet-stream;
+    }
+
+    # Stricter rate limit on form submission endpoints
+    location ~ ^/(suggest|register|login|comment) {
+        limit_req zone=submit burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass         http://127.0.0.1:${APP_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 30s;
     }
 
     location / {
+        limit_req zone=general burst=20 nodelay;
+        limit_req_status 429;
         proxy_pass         http://127.0.0.1:${APP_PORT};
         proxy_http_version 1.1;
         proxy_set_header   Host              \$host;
@@ -292,6 +338,34 @@ if curl -fsS "http://127.0.0.1:${APP_PORT}/healthz" &>/dev/null; then
 else
   warn "Health check failed. Check logs: journalctl -u ${SERVICE} -n 50"
 fi
+
+# ── upgrade instructions ──────────────────────────────────────────────────────
+# Print the deploy instructions so the operator knows how to upgrade later.
+cat <<'UPGRADE'
+
+────────────────────────────────────────────────────────────
+  HOW TO DEPLOY FUTURE UPDATES
+────────────────────────────────────────────────────────────
+
+  SSH into the droplet, then run:
+
+    cd /opt/amazingtrak
+    git pull                               # pull latest code
+    go build -o amazingtrak ./...          # compile new binary
+    systemctl restart amazingtrak          # zero-config restart
+
+  That's it. The app applies DB schema migrations automatically
+  on startup — no manual SQL needed.
+
+  Verify the deploy:
+    curl -s http://localhost:8000/healthz
+    journalctl -u amazingtrak -n 30
+
+  If nginx config changed (e.g. after re-running this script):
+    nginx -t && systemctl reload nginx
+
+────────────────────────────────────────────────────────────
+UPGRADE
 
 # ── summary ───────────────────────────────────────────────────────────────────
 hr

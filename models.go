@@ -26,6 +26,8 @@ type Corridor struct {
 	HeroImageURL          string
 	ThumbnailURL          string
 	ScheduleURL           string
+	ConductorUserID       sql.NullInt64
+	ConductorUsername     string
 }
 
 type Train struct {
@@ -329,7 +331,8 @@ func allCorridors(db *sql.DB, activeOnly bool) ([]Corridor, error) {
 		(SELECT COUNT(*) FROM media WHERE corridor_id=c.id),
 		COALESCE((SELECT CASE WHEN local_path!='' AND local_path IS NOT NULL THEN '/uploads/'||local_path ELSE url END FROM media WHERE id=c.hero_media_id), ''),
 		COALESCE((SELECT CASE WHEN local_path!='' AND local_path IS NOT NULL THEN '/uploads/'||local_path ELSE url END FROM media WHERE id=c.thumbnail_media_id), ''),
-		COALESCE(c.schedule_url,'')
+		COALESCE(c.schedule_url,''),
+		c.conductor_user_id, COALESCE((SELECT username FROM users WHERE id=c.conductor_user_id), '')
 		FROM corridors c
 		LEFT JOIN trains t ON t.corridor_id = c.id`
 	if activeOnly {
@@ -354,13 +357,15 @@ func corridorBySlug(db *sql.DB, slug string) (Corridor, error) {
 		(SELECT COUNT(*) FROM media WHERE corridor_id=c.id),
 		COALESCE((SELECT CASE WHEN local_path!='' AND local_path IS NOT NULL THEN '/uploads/'||local_path ELSE url END FROM media WHERE id=c.hero_media_id), ''),
 		COALESCE((SELECT CASE WHEN local_path!='' AND local_path IS NOT NULL THEN '/uploads/'||local_path ELSE url END FROM media WHERE id=c.thumbnail_media_id), ''),
-		COALESCE(c.schedule_url,'')
+		COALESCE(c.schedule_url,''),
+		c.conductor_user_id, COALESCE((SELECT username FROM users WHERE id=c.conductor_user_id), '')
 		FROM corridors c WHERE c.slug=?`, slug).
 		Scan(&c.ID, &c.Name, &c.Slug, &c.Region, &c.Description,
 			&c.OnTimePercent, &c.ServiceQualitySummary,
 			&c.HeroTrainID, &c.HeroMediaID, &c.ThumbnailMediaID,
 			&c.IsActive, &c.SortOrder, &c.CreatedAt, &c.UpdatedAt,
-			&c.TrainCount, &c.MediaCount, &c.HeroImageURL, &c.ThumbnailURL, &c.ScheduleURL)
+			&c.TrainCount, &c.MediaCount, &c.HeroImageURL, &c.ThumbnailURL, &c.ScheduleURL,
+			&c.ConductorUserID, &c.ConductorUsername)
 	return c, err
 }
 
@@ -374,13 +379,15 @@ func corridorByID(db *sql.DB, id int64) (Corridor, error) {
 		(SELECT COUNT(*) FROM media WHERE corridor_id=c.id),
 		COALESCE((SELECT CASE WHEN local_path!='' AND local_path IS NOT NULL THEN '/uploads/'||local_path ELSE url END FROM media WHERE id=c.hero_media_id), ''),
 		COALESCE((SELECT CASE WHEN local_path!='' AND local_path IS NOT NULL THEN '/uploads/'||local_path ELSE url END FROM media WHERE id=c.thumbnail_media_id), ''),
-		COALESCE(c.schedule_url,'')
+		COALESCE(c.schedule_url,''),
+		c.conductor_user_id, COALESCE((SELECT username FROM users WHERE id=c.conductor_user_id), '')
 		FROM corridors c WHERE c.id=?`, id).
 		Scan(&c.ID, &c.Name, &c.Slug, &c.Region, &c.Description,
 			&c.OnTimePercent, &c.ServiceQualitySummary,
 			&c.HeroTrainID, &c.HeroMediaID, &c.ThumbnailMediaID,
 			&c.IsActive, &c.SortOrder, &c.CreatedAt, &c.UpdatedAt,
-			&c.TrainCount, &c.MediaCount, &c.HeroImageURL, &c.ThumbnailURL, &c.ScheduleURL)
+			&c.TrainCount, &c.MediaCount, &c.HeroImageURL, &c.ThumbnailURL, &c.ScheduleURL,
+			&c.ConductorUserID, &c.ConductorUsername)
 	return c, err
 }
 
@@ -392,12 +399,132 @@ func scanCorridors(rows *sql.Rows) ([]Corridor, error) {
 			&c.OnTimePercent, &c.ServiceQualitySummary,
 			&c.HeroTrainID, &c.HeroMediaID, &c.ThumbnailMediaID,
 			&c.IsActive, &c.SortOrder, &c.CreatedAt, &c.UpdatedAt,
-			&c.TrainCount, &c.MediaCount, &c.HeroImageURL, &c.ThumbnailURL, &c.ScheduleURL); err != nil {
+			&c.TrainCount, &c.MediaCount, &c.HeroImageURL, &c.ThumbnailURL, &c.ScheduleURL,
+			&c.ConductorUserID, &c.ConductorUsername); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// ----- Conductor queries -----
+
+// ConductorRequest is a user's pending/decided request to maintain a corridor.
+type ConductorRequest struct {
+	ID           int64
+	CorridorID   int64
+	UserID       int64
+	Status       string
+	Message      string
+	CreatedAt    string
+	ReviewedAt   sql.NullString
+	CorridorName string
+	CorridorSlug string
+	Username     string
+}
+
+// corridorsConductedBy returns the corridors a user is the conductor of.
+func corridorsConductedBy(db *sql.DB, userID int64) ([]Corridor, error) {
+	q := `SELECT c.id, c.name, c.slug, COALESCE(c.region,''), COALESCE(c.description,''),
+		c.on_time_percent, COALESCE(c.service_quality_summary,''),
+		c.hero_train_id, c.hero_media_id, c.thumbnail_media_id,
+		c.is_active, c.sort_order, c.created_at, c.updated_at,
+		(SELECT COUNT(*) FROM trains WHERE corridor_id=c.id),
+		(SELECT COUNT(*) FROM media WHERE corridor_id=c.id),
+		COALESCE((SELECT CASE WHEN local_path!='' AND local_path IS NOT NULL THEN '/uploads/'||local_path ELSE url END FROM media WHERE id=c.hero_media_id), ''),
+		COALESCE((SELECT CASE WHEN local_path!='' AND local_path IS NOT NULL THEN '/uploads/'||local_path ELSE url END FROM media WHERE id=c.thumbnail_media_id), ''),
+		COALESCE(c.schedule_url,''),
+		c.conductor_user_id, COALESCE((SELECT username FROM users WHERE id=c.conductor_user_id), '')
+		FROM corridors c WHERE c.conductor_user_id=? ORDER BY c.sort_order, c.name`
+	rows, err := db.Query(q, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanCorridors(rows)
+}
+
+// isConductorOf reports whether userID is the conductor of corridorID.
+func isConductorOf(db *sql.DB, userID, corridorID int64) (bool, error) {
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM corridors WHERE id=? AND conductor_user_id=?`, corridorID, userID).Scan(&n)
+	return n > 0, err
+}
+
+func setCorridorConductor(db *sql.DB, corridorID, userID int64) error {
+	_, err := db.Exec(`UPDATE corridors SET conductor_user_id=? WHERE id=?`, userID, corridorID)
+	return err
+}
+
+func clearCorridorConductor(db *sql.DB, corridorID int64) error {
+	_, err := db.Exec(`UPDATE corridors SET conductor_user_id=NULL WHERE id=?`, corridorID)
+	return err
+}
+
+// pendingConductorRequest reports whether the user already has a pending request
+// for the given corridor.
+func pendingConductorRequest(db *sql.DB, corridorID, userID int64) (bool, error) {
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM conductor_requests WHERE corridor_id=? AND user_id=? AND status='pending'`, corridorID, userID).Scan(&n)
+	return n > 0, err
+}
+
+func createConductorRequest(db *sql.DB, corridorID, userID int64, message string) error {
+	_, err := db.Exec(`INSERT INTO conductor_requests (corridor_id, user_id, message) VALUES (?, ?, ?)`, corridorID, userID, message)
+	return err
+}
+
+func conductorRequestByID(db *sql.DB, id int64) (ConductorRequest, error) {
+	var cr ConductorRequest
+	err := db.QueryRow(`SELECT cr.id, cr.corridor_id, cr.user_id, cr.status, cr.message, cr.created_at, cr.reviewed_at,
+		c.name, c.slug, u.username
+		FROM conductor_requests cr
+		JOIN corridors c ON c.id=cr.corridor_id
+		JOIN users u ON u.id=cr.user_id
+		WHERE cr.id=?`, id).
+		Scan(&cr.ID, &cr.CorridorID, &cr.UserID, &cr.Status, &cr.Message, &cr.CreatedAt, &cr.ReviewedAt,
+			&cr.CorridorName, &cr.CorridorSlug, &cr.Username)
+	return cr, err
+}
+
+// conductorRequestsByStatus lists requests with the given status, newest first.
+func conductorRequestsByStatus(db *sql.DB, status string) ([]ConductorRequest, error) {
+	rows, err := db.Query(`SELECT cr.id, cr.corridor_id, cr.user_id, cr.status, cr.message, cr.created_at, cr.reviewed_at,
+		c.name, c.slug, u.username
+		FROM conductor_requests cr
+		JOIN corridors c ON c.id=cr.corridor_id
+		JOIN users u ON u.id=cr.user_id
+		WHERE cr.status=? ORDER BY cr.created_at DESC`, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ConductorRequest
+	for rows.Next() {
+		var cr ConductorRequest
+		if err := rows.Scan(&cr.ID, &cr.CorridorID, &cr.UserID, &cr.Status, &cr.Message, &cr.CreatedAt, &cr.ReviewedAt,
+			&cr.CorridorName, &cr.CorridorSlug, &cr.Username); err != nil {
+			return nil, err
+		}
+		out = append(out, cr)
+	}
+	return out, rows.Err()
+}
+
+// decideConductorRequest sets a request's status and review metadata.
+func decideConductorRequest(db *sql.DB, id int64, status string, adminUserID int64) error {
+	_, err := db.Exec(`UPDATE conductor_requests SET status=?, reviewed_at=CURRENT_TIMESTAMP, reviewed_by=? WHERE id=?`,
+		status, adminUserID, id)
+	return err
+}
+
+// rejectOtherPendingRequests rejects all other pending requests for a corridor
+// (used when one request is approved or a conductor is assigned directly).
+func rejectOtherPendingRequests(db *sql.DB, corridorID, exceptID int64, adminUserID int64) error {
+	_, err := db.Exec(`UPDATE conductor_requests SET status='rejected', reviewed_at=CURRENT_TIMESTAMP, reviewed_by=?
+		WHERE corridor_id=? AND status='pending' AND id!=?`, adminUserID, corridorID, exceptID)
+	return err
 }
 
 // ----- Train queries -----

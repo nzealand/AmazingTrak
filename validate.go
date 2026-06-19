@@ -83,6 +83,7 @@ func classifyPublicURL(raw string) (domain, mediaType, normalized string, ok boo
 	}
 	host := strings.ToLower(u.Hostname())
 	host = strings.TrimPrefix(host, "www.")
+	host = strings.TrimPrefix(host, "m.")
 	mt, found := allowedDomains[host]
 	if !found {
 		return "", "", "", false
@@ -149,6 +150,7 @@ func validateAdminURL(raw string) (domain, normalized string, ok bool) {
 	}
 	host := strings.ToLower(u.Hostname())
 	host = strings.TrimPrefix(host, "www.")
+	host = strings.TrimPrefix(host, "m.")
 	if host == "" {
 		return "", "", false
 	}

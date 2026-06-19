@@ -682,6 +682,16 @@ func main() {
 	mux.HandleFunc("POST /trains/{slug}/comment", app.requireUser(app.handleCommentSubmit))
 	mux.HandleFunc("GET /stations/{slug}", app.handleStation)
 
+	// Conductor self-service (managed through public pages; never the admin URL).
+	mux.HandleFunc("POST /corridors/{slug}/conductor/request", app.requireUser(app.handleConductorRequest))
+	mux.HandleFunc("GET /corridors/{slug}/trains/new", app.requireUser(app.handleConductorTrainNewForm))
+	mux.HandleFunc("POST /corridors/{slug}/trains/new", app.requireUser(app.handleConductorTrainCreate))
+	mux.HandleFunc("GET /trains/{slug}/edit", app.requireUser(app.handleConductorTrainEditForm))
+	mux.HandleFunc("POST /trains/{slug}/edit", app.requireUser(app.handleConductorTrainEdit))
+	mux.HandleFunc("POST /trains/{slug}/deactivate", app.requireUser(app.handleConductorTrainToggle))
+	mux.HandleFunc("GET /trains/{slug}/edit/stops", app.requireUser(app.handleConductorStopsForm))
+	mux.HandleFunc("POST /trains/{slug}/edit/stops", app.requireUser(app.handleConductorStopsUpdate))
+
 	// Public user accounts (registration / login)
 	mux.HandleFunc("GET /register", app.handleRegisterForm)
 	mux.HandleFunc("POST /register", app.handleRegisterPost)
@@ -719,6 +729,13 @@ func main() {
 	mux.HandleFunc("POST "+p+"/corridors/{id}/media/{mid}/geo", rc(app.handleAdminCorridorMediaGeo))
 	mux.HandleFunc("POST "+p+"/corridors/{id}/media/{mid}/caption", rc(app.handleAdminCorridorMediaCaption))
 	mux.HandleFunc("POST "+p+"/corridors/{id}/media/{mid}/title", rc(app.handleAdminCorridorMediaTitle))
+
+	// Conductors (corridor maintainers) — level 4
+	mux.HandleFunc("GET "+p+"/conductors", rc(app.handleAdminConductors))
+	mux.HandleFunc("POST "+p+"/conductors/{id}/approve", rc(app.handleAdminConductorApprove))
+	mux.HandleFunc("POST "+p+"/conductors/{id}/reject", rc(app.handleAdminConductorReject))
+	mux.HandleFunc("POST "+p+"/corridors/{id}/conductor/set", rc(app.handleAdminCorridorConductorSet))
+	mux.HandleFunc("POST "+p+"/corridors/{id}/conductor/remove", rc(app.handleAdminCorridorConductorRemove))
 
 	// Admin trains (permission level 3)
 	rt := func(h http.HandlerFunc) http.HandlerFunc { return app.requirePermission(3, h) }

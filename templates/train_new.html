@@ -1,0 +1,29 @@
+{{define "title"}}New Train — {{.Data.Corridor.Name}}{{end}}
+{{define "content"}}
+{{$d := .Data}}
+<div class="container" style="padding-top:1.5rem;max-width:680px">
+  <nav style="font-size:.85rem;color:var(--muted);margin-bottom:.75rem">
+    <a href="/corridors/{{$d.Corridor.Slug}}">{{$d.Corridor.Name}}</a> › New Train
+  </nav>
+  <div class="page-header">
+    <h1>Add a Train</h1>
+    <p class="subtitle">Create a new train in the {{$d.Corridor.Name}} corridor. You can fill in the rest of its details after.</p>
+  </div>
+
+  {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+
+  <form method="post" action="/corridors/{{$d.Corridor.Slug}}/trains/new" class="suggest-form">
+    <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
+    <div class="form-group">
+      <label class="form-label" for="train_number">Train Number *</label>
+      <input class="form-input" type="text" id="train_number" name="train_number" required placeholder="e.g. 14">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="display_name">Display Name *</label>
+      <input class="form-input" type="text" id="display_name" name="display_name" required placeholder="e.g. Coast Starlight 14">
+    </div>
+    <button type="submit" class="btn btn-primary">Create Train</button>
+    <a href="/corridors/{{$d.Corridor.Slug}}" class="btn btn-secondary" style="margin-left:.5rem">Cancel</a>
+  </form>
+</div>
+{{end}}

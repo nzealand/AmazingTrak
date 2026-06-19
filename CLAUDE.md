@@ -60,6 +60,6 @@ Single-binary Go app: `go run .` compiles `main.go`, `auth.go`, `db.go`, `handle
 - Hero image: only one per train (`hero_media_id` on the `trains` row); setting a new hero does NOT use a DB unique index — it's enforced in handler logic by clearing the old value first.
 - Uploaded images are always re-encoded to JPEG regardless of original format.
 - Ask before any destructive action, including deleting files, overwriting migrations, force-pushing, or changing production config.
-- Go ahead with most other changes, this is a non production project, so you can curl, restart go, kill processes without asking
+- The site is live on Digital Ocean. All changes must be upgrade-safe: new DB columns must have defaults or be nullable, no column renames or drops without a migration plan, no breaking changes to existing data formats, and schema changes must apply cleanly via `applySchema` on a running instance without data loss.
 
 After completing a significant change always update the admin version to include the latest timestamp e.g. 3.6.6 11:46AM and if the user requests to increment the version add that version to the CHANGELOG.md e.g. ===3.6.7=====

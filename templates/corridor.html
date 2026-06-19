@@ -44,6 +44,28 @@
   <p style="font-size:1rem;color:var(--muted);max-width:720px;margin-bottom:1.5rem">{{$d.Corridor.Description}}</p>
   {{end}}
 
+  <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:1.5rem;font-size:.9rem">
+    {{if $d.Corridor.ConductorUsername}}
+      <span style="color:var(--muted)">🧑‍✈️ Maintained by <a href="/users/{{$d.Corridor.ConductorUsername}}">{{$d.Corridor.ConductorUsername}}</a></span>
+    {{else if $d.CanManage}}
+    {{else if $d.CanRequest}}
+      <form method="post" action="/corridors/{{$d.Corridor.Slug}}/conductor/request" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
+        <input class="form-input" type="text" name="message" maxlength="500" placeholder="Why you'd like to maintain this corridor (optional)" style="width:min(22rem,70vw);padding:.35rem .55rem;font-size:.85rem">
+        <button class="btn btn-secondary btn-sm" type="submit">Request to be Conductor</button>
+      </form>
+    {{else if $d.HasRequested}}
+      <span style="color:var(--muted)">Your request to maintain this corridor is pending review.</span>
+    {{else if not .CurrentUser}}
+      <span style="color:var(--muted)">Want to help maintain this corridor? <a href="/login">Log in</a> or <a href="/register">register</a> to request the Conductor role.</span>
+    {{end}}
+
+    {{if $d.CanManage}}
+      <span style="color:var(--muted)">🧑‍✈️ You maintain this corridor.</span>
+      <a href="/corridors/{{$d.Corridor.Slug}}/trains/new" class="btn btn-secondary btn-sm">+ Add Train</a>
+    {{end}}
+  </div>
+
   {{if $d.Corridor.OnTimePercent.Valid}}
   <div style="margin-bottom:1.25rem">
     <span style="font-size:.85rem;color:var(--muted)">On-time performance:</span>
@@ -67,24 +89,32 @@
       <h2 class="section-heading">Trains</h2>
       <div class="cards-grid cards-grid--compact" style="padding-top:0">
         {{range $d.Trains}}
-        <a href="/trains/{{.Slug}}" style="text-decoration:none;color:inherit">
-          <div class="card">
-            {{if .ThumbnailURL}}
-              <img class="card-thumb" src="{{.ThumbnailURL}}" alt="{{.DisplayName}}" loading="lazy">
-            {{else if .HeroImageURL}}
-              <img class="card-thumb" src="{{.HeroImageURL}}" alt="{{.DisplayName}}" loading="lazy">
-            {{else}}
-              <div class="card-thumb-placeholder">🚂</div>
-            {{end}}
-            <div class="card-body">
-              <div class="card-title">{{.DisplayName}}</div>
-              <div class="card-meta">
-                {{if .Direction}}<span>{{.Direction}}</span>{{end}}
-                {{if .Notes}}<br><span style="font-size:.8rem">{{truncate .Notes 80}}</span>{{end}}
+        <div>
+          <a href="/trains/{{.Slug}}" style="text-decoration:none;color:inherit">
+            <div class="card">
+              {{if .ThumbnailURL}}
+                <img class="card-thumb" src="{{.ThumbnailURL}}" alt="{{.DisplayName}}" loading="lazy">
+              {{else if .HeroImageURL}}
+                <img class="card-thumb" src="{{.HeroImageURL}}" alt="{{.DisplayName}}" loading="lazy">
+              {{else}}
+                <div class="card-thumb-placeholder">🚂</div>
+              {{end}}
+              <div class="card-body">
+                <div class="card-title">{{.DisplayName}}{{if not .IsActive}} <span style="font-size:.7rem;color:var(--muted);font-weight:400">(inactive)</span>{{end}}</div>
+                <div class="card-meta">
+                  {{if .Direction}}<span>{{.Direction}}</span>{{end}}
+                  {{if .Notes}}<br><span style="font-size:.8rem">{{truncate .Notes 80}}</span>{{end}}
+                </div>
               </div>
             </div>
+          </a>
+          {{if $d.CanManage}}
+          <div style="display:flex;gap:.5rem;margin-top:.35rem;font-size:.85rem">
+            <a href="/trains/{{.Slug}}/edit">✎ Edit</a>
+            <a href="/trains/{{.Slug}}/edit/stops">Schedule</a>
           </div>
-        </a>
+          {{end}}
+        </div>
         {{end}}
       </div>
     </div>

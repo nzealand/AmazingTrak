@@ -43,6 +43,19 @@ If you didn't create an account, you can ignore this message.
 	app.sendMail(toEmail, "Confirm your "+getSiteName()+" account", body)
 }
 
+// sendConductorRequestEmail notifies admins that a user has requested the
+// Conductor role for a corridor. Best-effort.
+func (app *App) sendConductorRequestEmail(toEmail string, corridor Corridor, user User, baseURL string) {
+	conductorsURL := fmt.Sprintf("%s%s/conductors", baseURL, app.adminPrefix)
+	corridorURL := fmt.Sprintf("%s/corridors/%s", baseURL, corridor.Slug)
+	body := fmt.Sprintf(`%s has requested to become the Conductor of %s.
+
+Corridor page: %s
+Review requests: %s
+`, user.Username, corridor.Name, corridorURL, conductorsURL)
+	app.sendMail(toEmail, fmt.Sprintf("Conductor request for %s", corridor.Name), body)
+}
+
 func (app *App) sendSuggestionEmail(toEmail string, train Train, sug Suggestion, baseURL string) {
 	if app.smtpHost == "" || toEmail == "" {
 		return

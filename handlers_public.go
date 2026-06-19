@@ -19,6 +19,7 @@ type publicPage struct {
 	Data        interface{}
 	CurrentUser *User
 	UserCSRF    string
+	FormValues  map[string]string
 }
 
 func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -120,12 +121,12 @@ func (app *App) handleOverview(w http.ResponseWriter, r *http.Request) {
 
 	// Top 5 videos by rarity count
 	rows, err := app.db.Query(`SELECT t.display_name, t.slug, COALESCE(m.title,''), m.url, COALESCE(m.tags,''),
-		`+raritySQL+` AS rc,
+		` + raritySQL + ` AS rc,
 		COALESCE(u.username, CASE m.added_by WHEN 'admin' THEN 'Admin' ELSE 'Anonymous' END)
 		FROM media m
 		JOIN trains t ON t.id=m.train_id
 		LEFT JOIN users u ON u.id=m.user_id
-		WHERE m.media_type='video' AND `+raritySQL+`>0
+		WHERE m.media_type='video' AND ` + raritySQL + `>0
 		ORDER BY rc DESC, m.created_at DESC LIMIT 5`)
 	if err == nil {
 		for rows.Next() {
@@ -261,7 +262,11 @@ func (app *App) handleCorridor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trains, err := trainsByCorridorID(app.db, corridor.ID, true)
+	// The conductor of this corridor sees inactive trains too, so they can
+	// reactivate them; everyone else sees only active trains.
+	viewer, _, canManage := app.conductorGuard(r, corridor.ID)
+
+	trains, err := trainsByCorridorID(app.db, corridor.ID, !canManage)
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
@@ -289,17 +294,36 @@ func (app *App) handleCorridor(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Conductor affordances: CanManage when the viewer conducts this corridor;
+	// CanRequest when a logged-in non-spammer (who isn't already the conductor)
+	// could request the role; HasRequested when they already have one pending.
+	canRequest := false
+	hasRequested := false
+	if viewer != nil && !viewer.IsSpammer && !canManage && !corridor.ConductorUserID.Valid {
+		if pending, _ := pendingConductorRequest(app.db, corridor.ID, viewer.ID); pending {
+			hasRequested = true
+		} else {
+			canRequest = true
+		}
+	}
+
 	type corridorDetail struct {
-		Corridor  Corridor
-		Trains    []Train
-		Media     []Media
-		BestVideo *Media
-		Stops     []Stop
+		Corridor     Corridor
+		Trains       []Train
+		Media        []Media
+		BestVideo    *Media
+		Stops        []Stop
+		CanManage    bool
+		CanRequest   bool
+		HasRequested bool
 	}
 	app.renderPublic(w, r, "corridor.html", publicPage{
 		Title: corridor.Name + " — AmazingTrak",
 		Flash: getFlash(w, r),
-		Data:  corridorDetail{Corridor: corridor, Trains: trains, Media: media, BestVideo: bestVideo, Stops: stops},
+		Data: corridorDetail{
+			Corridor: corridor, Trains: trains, Media: media, BestVideo: bestVideo, Stops: stops,
+			CanManage: canManage, CanRequest: canRequest, HasRequested: hasRequested,
+		},
 	})
 }
 
@@ -416,18 +440,23 @@ func (app *App) handleTrain(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// CanManage drives the conductor edit affordances; true when the logged-in
+	// user is the conductor of this train's corridor.
+	_, _, canManage := app.conductorGuard(r, train.CorridorID)
+
 	type trainDetail struct {
-		Train               Train
-		HeroMedia           *Media
-		MapMedia            *Media
-		Images              []Media
-		Videos              []Media
-		BestVideo           *Media
-		Rarities            []raritySummary
-		Websites            []Media
-		Stops               []TrainStop
-		Comments            []Comment
-		OwnPendingComments  []Comment
+		Train              Train
+		HeroMedia          *Media
+		MapMedia           *Media
+		Images             []Media
+		Videos             []Media
+		BestVideo          *Media
+		Rarities           []raritySummary
+		Websites           []Media
+		Stops              []TrainStop
+		Comments           []Comment
+		OwnPendingComments []Comment
+		CanManage          bool
 	}
 	app.renderPublic(w, r, "train.html", publicPage{
 		Title: train.DisplayName + " — AmazingTrak",
@@ -444,6 +473,7 @@ func (app *App) handleTrain(w http.ResponseWriter, r *http.Request) {
 			Stops:              stops,
 			Comments:           comments,
 			OwnPendingComments: ownPendingComments,
+			CanManage:          canManage,
 		},
 	})
 }
@@ -538,17 +568,29 @@ func (app *App) handleSuggestSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	tags := parseVideoTags(r.Form["tags"])
 
+	renderFormError := func(msg string) {
+		setTimingCookie(w)
+		fv := map[string]string{
+			"url":     rawURL,
+			"title":   r.FormValue("title"),
+			"comment": r.FormValue("comment"),
+		}
+		app.renderPublic(w, r, "suggest.html", publicPage{
+			Title:      "Suggest Media — " + train.DisplayName,
+			Flash:      msg,
+			Data:       train,
+			FormValues: fv,
+		})
+	}
+
 	domain, mediaType, normURL, ok := classifyPublicURL(rawURL)
 	if !ok {
-		setFlash(w, "That URL is not allowed. Submit links from YouTube, Vimeo, Flickr, Imgur, RailPictures.net, or RRPictureArchives.net.")
-		setTimingCookie(w)
-		http.Redirect(w, r, "/trains/"+slug+"/suggest", http.StatusSeeOther)
+		renderFormError("That URL is not allowed. Submit links from YouTube, Vimeo, Flickr, Imgur, RailPictures.net, or RRPictureArchives.net.")
 		return
 	}
 
 	if app.checkDuplicateSuggestion(train.ID, normURL) {
-		setFlash(w, "This link has already been submitted.")
-		http.Redirect(w, r, "/trains/"+slug+"/suggest", http.StatusSeeOther)
+		renderFormError("This link has already been submitted.")
 		return
 	}
 

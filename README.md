@@ -191,6 +191,19 @@ go build -o amazingtrak ./...
 systemctl restart amazingtrak
 ```
 
+DB schema migrations run automatically on startup — no manual SQL required. Verify the deploy:
+
+```sh
+curl -s http://localhost:8000/healthz
+journalctl -u amazingtrak -n 30
+```
+
+If the nginx config changed (e.g. after re-running `setup-vps.sh`):
+
+```sh
+nginx -t && systemctl reload nginx
+```
+
 ### Directory Layout
 
 ```

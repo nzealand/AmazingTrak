@@ -2,6 +2,39 @@
 
 All notable changes to AmazingTrak are documented here.
 
+===3.11.0=====
+
+### Conductors (corridor maintainers)
+- **New role**: a registered user can be assigned as the **Conductor** of a corridor (one per corridor). The conductor is shown publicly on the corridor page ("Maintained by …").
+- **Requesting the role**: any logged-in non-spammer user can request to maintain a corridor that has no conductor, from the corridor page. Anonymous visitors are prompted to log in or register first.
+- **Admin review**: new **Conductors** admin page (permission level 4) lists pending requests to approve/reject, and provides a searchable user picker to assign, change, or remove a corridor's conductor. The same set/remove control is also embedded on the corridor edit page.
+- **Conductor self-service** (all through the public site — conductors never see the admin URL): edit a train's Display Name, Slug, Train Number, Corridor (restricted to corridors they conduct), Sort Order, Direction and Notes; create new trains; deactivate/reactivate trains; and edit each train's route & schedule (arrival/departure times and weekday/weekend running days). Conductors also see their corridor's inactive trains so they can reactivate them.
+
+### Database
+- New nullable `corridors.conductor_user_id` column and `conductor_requests` table (upgrade-safe: idempotent `ALTER TABLE` + `CREATE TABLE IF NOT EXISTS`, applied automatically on startup).
+
+===3.10.0=====
+
+### Security & Infrastructure
+- **Nginx rate limiting**: three zones — general (10 req/s, burst 20), submit/login (2 req/s, burst 5), login (5 req/min). Returns HTTP 429 on excess. Applied at the nginx layer before requests reach Go.
+- **Security headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin`, `X-XSS-Protection`, `Permissions-Policy`, and a `Content-Security-Policy` added to all responses via nginx.
+- **Upload directory hardening**: `/uploads/` location now sets `nosniff` and restricts MIME types to images only.
+
+### Database
+- **Schema migration versioning**: new `schema_migrations` table records which numbered migrations have run. Future non-idempotent migrations (column renames, backfills, table rebuilds) can now be wrapped with `migrationApplied` / `markMigration` guards and will run exactly once, safely.
+- **Log table pruning**: `login_attempts` and `audit_log` rows older than 30 days are now pruned hourly alongside the existing rate-limit cleanup. Prevents unbounded table growth in production.
+
+### Operations
+- **Upgrade instructions** printed at end of `setup-vps.sh` — documents the `git pull → go build → systemctl restart` deploy workflow.
+
+### How to deploy updates going forward
+1. SSH into the droplet
+2. `cd /opt/amazingtrak && git pull`
+3. `go build -o amazingtrak ./...`
+4. `systemctl restart amazingtrak`
+
+DB migrations run automatically on startup. No manual SQL required. Verify with `curl http://localhost:PORT/healthz`.
+
 ===3.9.0=====
 
 ### Added

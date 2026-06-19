@@ -58,6 +58,14 @@
 <div class="container" style="padding-top:1.5rem">
   {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 
+  {{if $d.CanManage}}
+  <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:1.25rem;padding:.6rem .8rem;background:var(--input-bg);border:1px solid var(--border);border-radius:.5rem;font-size:.9rem">
+    <span style="color:var(--muted)">🧑‍✈️ You maintain the {{$d.Train.CorridorName}} corridor.</span>
+    <a href="/trains/{{$d.Train.Slug}}/edit" class="btn btn-secondary btn-sm">✎ Edit Train</a>
+    <a href="/trains/{{$d.Train.Slug}}/edit/stops" class="btn btn-secondary btn-sm">Route &amp; Schedule</a>
+  </div>
+  {{end}}
+
   {{if $d.HeroMedia}}
   <nav style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">
     <a href="/corridors">Corridors</a> ›

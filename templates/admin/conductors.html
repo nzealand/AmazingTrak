@@ -1,0 +1,87 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+
+<datalist id="user-list">
+  {{range $d.Users}}<option value="{{.Username}}">{{end}}
+</datalist>
+
+<section style="margin-bottom:2.5rem">
+  <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">
+    Pending Conductor Requests{{if $d.Pending}} ({{len $d.Pending}}){{end}}
+  </h3>
+
+  {{if not $d.Pending}}
+  <p style="color:var(--muted)">No pending requests.</p>
+  {{else}}
+  <table class="admin-table">
+    <thead><tr><th>User</th><th>Corridor</th><th>Message</th><th>Requested</th><th>Actions</th></tr></thead>
+    <tbody>
+      {{range $d.Pending}}
+      <tr>
+        <td><a href="/users/{{.Username}}" target="_blank" title="View public profile">{{.Username}}</a></td>
+        <td><a href="/corridors/{{.CorridorSlug}}" target="_blank">{{.CorridorName}}</a></td>
+        <td style="max-width:280px;font-size:.85rem;color:var(--muted)">{{if .Message}}{{.Message}}{{else}}—{{end}}</td>
+        <td style="font-size:.8rem;color:var(--muted)">{{.CreatedAt}}</td>
+        <td>
+          <div class="btn-group">
+            <form method="post" action="{{$.AdminPrefix}}/conductors/{{.ID}}/approve">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn btn-sm btn-primary" type="submit">Approve</button>
+            </form>
+            <form method="post" action="{{$.AdminPrefix}}/conductors/{{.ID}}/reject">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn btn-sm btn-danger" type="submit">Reject</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+</section>
+
+<section>
+  <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">
+    Corridor Conductors
+  </h3>
+  <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">Assign a registered user as Conductor by typing their username (autocompletes). Each corridor has at most one Conductor.</p>
+
+  <table class="admin-table">
+    <thead><tr><th>Corridor</th><th>Current Conductor</th><th>Assign / Change</th></tr></thead>
+    <tbody>
+      {{range $d.Corridors}}
+      <tr>
+        <td>
+          <a href="/corridors/{{.Slug}}" target="_blank">{{.Name}}</a>
+          {{if not .IsActive}}<span class="status-badge status-pending" style="margin-left:.4rem">inactive</span>{{end}}
+        </td>
+        <td>
+          {{if .ConductorUsername}}
+            <a href="/users/{{.ConductorUsername}}" target="_blank">{{.ConductorUsername}}</a>
+          {{else}}
+            <span style="color:var(--muted)">—</span>
+          {{end}}
+        </td>
+        <td>
+          <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+            <form method="post" action="{{$.AdminPrefix}}/corridors/{{.ID}}/conductor/set" style="display:flex;gap:.4rem;align-items:center">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input class="form-input" type="text" name="username" list="user-list" placeholder="username" required
+                style="width:11rem;padding:.3rem .5rem;font-size:.85rem">
+              <button class="btn btn-sm btn-primary" type="submit">Set</button>
+            </form>
+            {{if .ConductorUsername}}
+            <form method="post" action="{{$.AdminPrefix}}/corridors/{{.ID}}/conductor/remove">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn btn-sm btn-danger" type="submit">Remove</button>
+            </form>
+            {{end}}
+          </div>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}

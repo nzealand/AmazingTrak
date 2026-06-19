@@ -276,6 +276,22 @@ func (app *App) deleteUserSession(id string) {
 	app.db.Exec(`DELETE FROM user_sessions WHERE id=?`, id)
 }
 
+// conductorGuard returns the logged-in user, their session CSRF token, and
+// whether that user is the conductor of corridorID. Anonymous visitors and
+// non-conductors get (user-or-nil, csrf, false). Conductor management routes use
+// this to gate access without ever exposing the admin area.
+func (app *App) conductorGuard(r *http.Request, corridorID int64) (*User, string, bool) {
+	u, csrf := app.getUserSession(r)
+	if u == nil || u.IsSpammer {
+		return u, csrf, false
+	}
+	ok, err := isConductorOf(app.db, u.ID, corridorID)
+	if err != nil {
+		return u, csrf, false
+	}
+	return u, csrf, ok
+}
+
 func (app *App) setUserSessionCookie(w http.ResponseWriter, sessionID string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "usersession",
@@ -321,6 +337,8 @@ func (app *App) purgeExpiredSessions() {
 
 func (app *App) purgeOldRateLimitLogs() {
 	app.db.Exec(`DELETE FROM rate_limit_log WHERE created_at < datetime('now', '-25 hours')`)
+	app.db.Exec(`DELETE FROM login_attempts WHERE created_at < datetime('now', '-30 days')`)
+	app.db.Exec(`DELETE FROM audit_log WHERE created_at < datetime('now', '-30 days')`)
 }
 
 func (app *App) logAudit(adminUserID int64, action, entityType string, entityID int64, detail string) {

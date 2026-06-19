@@ -1,0 +1,68 @@
+{{define "title"}}Edit {{.Data.Train.DisplayName}} — {{siteName}}{{end}}
+{{define "content"}}
+{{$d := .Data}}
+<div class="container" style="padding-top:1.5rem;max-width:760px">
+  <nav style="font-size:.85rem;color:var(--muted);margin-bottom:.75rem">
+    <a href="/corridors/{{$d.Train.CorridorSlug}}">{{$d.Train.CorridorName}}</a> ›
+    <a href="/trains/{{$d.Train.Slug}}">{{$d.Train.DisplayName}}</a> › Edit
+  </nav>
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+    <h1>Edit Train</h1>
+    <span style="font-size:.85rem;color:var(--muted)">You maintain the {{$d.Train.CorridorName}} corridor.</span>
+  </div>
+
+  {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+
+  <div style="display:flex;gap:.6rem;margin-bottom:1.25rem;flex-wrap:wrap">
+    <a href="/trains/{{$d.Train.Slug}}" class="btn btn-secondary">View Public Page ↗</a>
+    <a href="/trains/{{$d.Train.Slug}}/edit/stops" class="btn btn-secondary">Edit Route &amp; Schedule</a>
+    <form method="post" action="/trains/{{$d.Train.Slug}}/deactivate" style="display:contents">
+      <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
+      <button class="btn btn-secondary" type="submit">{{if $d.Train.IsActive}}Deactivate Train{{else}}Reactivate Train{{end}}</button>
+    </form>
+  </div>
+  {{if not $d.Train.IsActive}}
+  <p style="background:var(--input-bg);border:1px solid var(--border);border-radius:.4rem;padding:.6rem .8rem;font-size:.85rem;color:var(--muted);margin-bottom:1rem">This train is currently <strong>deactivated</strong> and hidden from the public site.</p>
+  {{end}}
+
+  <form method="post" action="/trains/{{$d.Train.Slug}}/edit" class="suggest-form">
+    <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
+    <div class="form-group">
+      <label class="form-label" for="display_name">Display Name *</label>
+      <input class="form-input" type="text" id="display_name" name="display_name" value="{{$d.Train.DisplayName}}" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="slug">Slug *</label>
+      <input class="form-input" type="text" id="slug" name="slug" value="{{$d.Train.Slug}}" required>
+      <div class="form-hint">Public URL: /trains/{slug}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="train_number">Train Number *</label>
+      <input class="form-input" type="text" id="train_number" name="train_number" value="{{$d.Train.TrainNumber}}" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="corridor_id">Corridor</label>
+      <select class="form-select" id="corridor_id" name="corridor_id">
+        {{range $d.Corridors}}
+        <option value="{{.ID}}" {{if eq $d.Train.CorridorID .ID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+      <div class="form-hint">You can only move this train to a corridor you maintain.</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="sort_order">Sort Order</label>
+      <input class="form-input" type="number" id="sort_order" name="sort_order" value="{{$d.Train.SortOrder}}">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="direction">Direction</label>
+      <input class="form-input" type="text" id="direction" name="direction" value="{{$d.Train.Direction}}" placeholder="e.g. Eastbound">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="notes">Notes</label>
+      <textarea class="form-textarea" id="notes" name="notes" rows="3">{{$d.Train.Notes}}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Save Changes</button>
+    <a href="/trains/{{$d.Train.Slug}}" class="btn btn-secondary" style="margin-left:.5rem">Cancel</a>
+  </form>
+</div>
+{{end}}

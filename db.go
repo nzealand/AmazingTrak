@@ -16,7 +16,28 @@ func openDB(path string) (*sql.DB, error) {
 	if err := applySchema(db); err != nil {
 		return nil, err
 	}
-	// migrations: add columns if the DB predates them
+	if err := runMigrations(db); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+// migrationApplied reports whether a numbered migration has already run.
+func migrationApplied(db *sql.DB, version int) bool {
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version=?`, version).Scan(&n)
+	return n > 0
+}
+
+// markMigration records that a numbered migration has run.
+func markMigration(db *sql.DB, version int) {
+	db.Exec(`INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)`, version)
+}
+
+func runMigrations(db *sql.DB) error {
+	// Historic idempotent ADD COLUMN migrations — safe to re-run every startup.
+	// SQLite ignores "duplicate column name" errors, so these are a no-op on
+	// databases that already have the column.
 	db.Exec(`ALTER TABLE trains ADD COLUMN map_media_id INTEGER`)
 	db.Exec(`ALTER TABLE site_preferences ADD COLUMN notification_email TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`ALTER TABLE corridors ADD COLUMN schedule_url TEXT NOT NULL DEFAULT ''`)
@@ -50,6 +71,8 @@ func openDB(path string) (*sql.DB, error) {
 	db.Exec(`ALTER TABLE admin_users ADD COLUMN permission_level INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE suggestions ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`)
 	db.Exec(`ALTER TABLE media ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`)
+	// Corridor conductor: a registered user assigned to maintain the corridor's trains.
+	db.Exec(`ALTER TABLE corridors ADD COLUMN conductor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_suggestions_user ON suggestions(user_id)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_media_train_type ON media(train_id, media_type)`)
@@ -58,9 +81,19 @@ func openDB(path string) (*sql.DB, error) {
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_suggestions_train_status ON suggestions(train_id, status)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_suggestions_status ON suggestions(status)`)
 	if err := migrateStopSlugs(db); err != nil {
-		return nil, err
+		return err
 	}
-	return db, nil
+
+	// ── Versioned migrations (non-idempotent) ──────────────────────────────
+	// Add new migrations below using the next integer. Each runs exactly once
+	// and is recorded in schema_migrations. Example for future use:
+	//
+	//   if !migrationApplied(db, 1) {
+	//       if _, err := db.Exec(`...`); err != nil { return err }
+	//       markMigration(db, 1)
+	//   }
+
+	return nil
 }
 
 func migrateStopSlugs(db *sql.DB) error {
@@ -103,6 +136,10 @@ func applySchema(db *sql.DB) error {
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+	version INTEGER PRIMARY KEY
+);
 
 CREATE TABLE IF NOT EXISTS corridors (
 	id INTEGER PRIMARY KEY,
@@ -212,6 +249,17 @@ CREATE TABLE IF NOT EXISTS comments (
 	reviewed_by INTEGER REFERENCES admin_users(id)
 );
 
+CREATE TABLE IF NOT EXISTS conductor_requests (
+	id INTEGER PRIMARY KEY,
+	corridor_id INTEGER NOT NULL REFERENCES corridors(id) ON DELETE CASCADE,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+	message TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	reviewed_at TEXT,
+	reviewed_by INTEGER REFERENCES admin_users(id)
+);
+
 CREATE TABLE IF NOT EXISTS admin_users (
 	id INTEGER PRIMARY KEY,
 	username TEXT NOT NULL UNIQUE,
@@ -296,6 +344,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_comments_train_status ON comments(train_id, status);
 CREATE INDEX IF NOT EXISTS idx_comments_status ON comments(status);
 CREATE INDEX IF NOT EXISTS idx_comments_user ON comments(user_id);
+CREATE INDEX IF NOT EXISTS idx_conductor_req_status ON conductor_requests(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conductor_req_pending ON conductor_requests(corridor_id, user_id) WHERE status='pending';
 
 CREATE TRIGGER IF NOT EXISTS corridors_updated_at AFTER UPDATE ON corridors BEGIN
 	UPDATE corridors SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
