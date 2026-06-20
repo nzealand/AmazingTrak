@@ -84,6 +84,7 @@ func runMigrations(db *sql.DB) error {
 	db.Exec(`ALTER TABLE site_preferences ADD COLUMN trusted_comment_rate_per_day INTEGER NOT NULL DEFAULT 100`)
 	// Highest pending-items threshold (1/10/100) the admin has already been emailed about (hysteresis state).
 	db.Exec(`ALTER TABLE site_preferences ADD COLUMN pending_notify_level INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN admin_compact INTEGER NOT NULL DEFAULT 0`)
 	// When the current email-verification token was last sent (for expiry).
 	db.Exec(`ALTER TABLE users ADD COLUMN confirm_sent_at TEXT`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)`)

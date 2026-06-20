@@ -217,8 +217,16 @@ func (app *App) handleConductorTrainToggle(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	app.db.Exec(`UPDATE trains SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END WHERE id=?`, train.ID)
+	app.invalidateIndexCache()
 	setFlash(w, "Train status updated.")
-	http.Redirect(w, r, "/trains/"+train.Slug+"/edit", http.StatusSeeOther)
+	// Honour an optional return_to (a safe site-relative path) so the button can
+	// send the conductor back where they clicked it. The train page 404s on an
+	// inactive train, so callers there point return_to at the corridor instead.
+	dest := "/trains/" + train.Slug + "/edit"
+	if rt := r.FormValue("return_to"); strings.HasPrefix(rt, "/") && !strings.HasPrefix(rt, "//") {
+		dest = rt
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 // conductorCorridor loads a corridor by slug and verifies the user conducts it.

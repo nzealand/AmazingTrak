@@ -43,7 +43,7 @@
   </div>
 </div>
 {{else}}
-<div style="background:linear-gradient(135deg,#1e3a5f,#0a1628);padding:2.5rem 2rem;color:#fff">
+<div class="page-hero" style="background:linear-gradient(135deg,#1e3a5f,#0a1628);color:#fff">
   <div class="container">
     <nav style="font-size:.85rem;opacity:.75;margin-bottom:.5rem">
       <a href="/corridors" style="color:#fff">Corridors</a> ›
@@ -63,6 +63,11 @@
     <span style="color:var(--muted)">🧑‍✈️ You maintain the {{$d.Train.CorridorName}} corridor.</span>
     <a href="/trains/{{$d.Train.Slug}}/edit" class="btn btn-secondary btn-sm">✎ Edit Train</a>
     <a href="/trains/{{$d.Train.Slug}}/edit/stops" class="btn btn-secondary btn-sm">Route &amp; Schedule</a>
+    <form method="post" action="/trains/{{$d.Train.Slug}}/deactivate" style="margin:0" onsubmit="return confirm('Deactivate {{$d.Train.DisplayName}}? It will be hidden from the public site (you can reactivate it from the corridor page).')">
+      <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
+      <input type="hidden" name="return_to" value="/corridors/{{$d.Train.CorridorSlug}}">
+      <button type="submit" class="btn btn-secondary btn-sm">Deactivate</button>
+    </form>
   </div>
   {{end}}
 

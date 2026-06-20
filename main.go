@@ -32,8 +32,10 @@ var (
 	faviconPathVal string
 	faviconVerVal  string
 
-	adminThemeMu  sync.RWMutex
-	adminThemeVal = "default"
+	adminThemeMu   sync.RWMutex
+	adminThemeVal  = "default"
+	adminCompactMu sync.RWMutex
+	adminCompactOn bool
 )
 
 type themeSpec struct {
@@ -133,6 +135,18 @@ func setAdminTheme(t string) {
 	adminThemeMu.Unlock()
 }
 
+func getAdminCompact() bool {
+	adminCompactMu.RLock()
+	defer adminCompactMu.RUnlock()
+	return adminCompactOn
+}
+
+func setAdminCompact(on bool) {
+	adminCompactMu.Lock()
+	adminCompactOn = on
+	adminCompactMu.Unlock()
+}
+
 func getFaviconPath() string {
 	faviconMu.RLock()
 	defer faviconMu.RUnlock()
@@ -188,7 +202,8 @@ var funcMap = template.FuncMap{
 		if !ok {
 			t = siteThemes["default"]
 		}
-		return template.HTML("<style>:root{" + t.navVars + "}</style>")
+		css := "<style>:root{" + t.navVars + "}</style>"
+		return template.HTML(css)
 	},
 	"siteAccentStyle": func() template.HTML {
 		t, ok := siteThemes[getAdminTheme()]
@@ -198,6 +213,15 @@ var funcMap = template.FuncMap{
 		css := ":root{" + t.publicLight + "}" +
 			"@media(prefers-color-scheme:dark){:root:not([data-theme=light]){" + t.publicDark + "}}" +
 			"[data-theme=dark]{" + t.publicDark + "}"
+		if getAdminCompact() {
+			// Compact mode: shrink the page hero header (keep the h1 at its
+			// normal size) and remove the 2rem top margin on section headings
+			// across the page.
+			css += `.page-hero{padding:1rem 2rem}` +
+				`.page-hero nav{margin-bottom:.25rem!important}` +
+				`.page-hero .corridor-region{margin-top:.25rem}` +
+				`.section-heading{margin-top:0!important}`
+		}
 		return template.HTML("<style>" + css + "</style>")
 	},
 	"faviconURL": func() string {
@@ -604,6 +628,7 @@ func main() {
 		if prefs.AdminTheme != "" {
 			setAdminTheme(prefs.AdminTheme)
 		}
+		setAdminCompact(prefs.AdminCompact)
 		if prefs.FaviconPath != "" {
 			ver := "1"
 			if fi, err := os.Stat(filepath.Join(uploadsDir, prefs.FaviconPath)); err == nil {

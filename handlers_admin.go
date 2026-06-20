@@ -2033,6 +2033,17 @@ func (app *App) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) 
 		app.logAudit(s.AdminUserID, "update_comment_rate_limits", "site_preferences", 1, "")
 		setFlash(w, "Comment rate limits saved.")
 
+	case "admin_compact":
+		on := lastFormValue(r, "admin_compact") == "1"
+		if _, err := app.db.Exec(`UPDATE site_preferences SET admin_compact=? WHERE id=1`, on); err != nil {
+			setFlash(w, "Error saving compact setting.")
+			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
+			return
+		}
+		setAdminCompact(on)
+		app.logAudit(s.AdminUserID, "update_admin_compact", "site_preferences", 1, fmt.Sprintf("%v", on))
+		setFlash(w, "Compact mode updated.")
+
 	case "admin_theme":
 		theme := r.FormValue("admin_theme")
 		validTheme := false

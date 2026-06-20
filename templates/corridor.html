@@ -23,7 +23,7 @@
   </div>
 </div>
 {{else}}
-<div style="background:linear-gradient(135deg,#1e3a5f,#0a1628);padding:2.5rem 2rem;color:#fff">
+<div class="page-hero" style="background:linear-gradient(135deg,#1e3a5f,#0a1628);color:#fff">
   <div class="container">
     <nav style="font-size:.85rem;opacity:.75;margin-bottom:.5rem"><a href="/corridors" style="color:#fff">Corridors</a> › {{$d.Corridor.Name}}</nav>
     <h1 style="font-size:2rem;font-weight:700">{{$d.Corridor.Name}}</h1>
@@ -102,9 +102,13 @@
             </div>
           </a>
           {{if $d.CanManage}}
-          <div style="display:flex;gap:.5rem;margin-top:.35rem;font-size:.85rem">
+          <div style="display:flex;gap:.5rem;align-items:center;margin-top:.35rem;font-size:.85rem">
             <a href="/trains/{{.Slug}}/edit">✎ Edit</a>
-            <a href="/trains/{{.Slug}}/edit/stops">Schedule</a>
+            <form method="post" action="/trains/{{.Slug}}/deactivate" style="margin:0" onsubmit="return confirm('{{if .IsActive}}Deactivate{{else}}Reactivate{{end}} {{.DisplayName}}?')">
+              <input type="hidden" name="csrf_token" value="{{$.UserCSRF}}">
+              <input type="hidden" name="return_to" value="/corridors/{{$d.Corridor.Slug}}">
+              <button type="submit" style="background:none;border:none;padding:0;color:var(--accent);font:inherit;cursor:pointer">{{if .IsActive}}Deactivate{{else}}Reactivate{{end}}</button>
+            </form>
           </div>
           {{end}}
         </div>

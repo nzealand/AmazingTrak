@@ -66,6 +66,20 @@
   </section>
 
   <section>
+    <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Admin Layout</h3>
+    <form method="post" action="{{.AdminPrefix}}/settings" class="admin-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="admin_compact">
+      <input type="hidden" name="admin_compact" value="0">
+      <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer">
+        <input type="checkbox" name="admin_compact" value="1" {{if $d.Prefs.AdminCompact}}checked{{end}} onchange="this.form.submit()">
+        <span style="font-size:.9rem;font-weight:500">Compact mode</span>
+        <span style="font-size:.8rem;color:var(--muted)">— tighter padding and spacing throughout the admin panel</span>
+      </label>
+    </form>
+  </section>
+
+  <section>
     <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Site Branding</h3>
     <form method="post" action="{{.AdminPrefix}}/settings" class="admin-form" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
