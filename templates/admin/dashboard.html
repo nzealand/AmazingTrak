@@ -21,6 +21,14 @@
     <div class="stat-num">{{$d.PendingCommentCount}}</div>
     <div class="stat-label">Pending comments</div>
   </div>
+  <div class="stat-card">
+    <div class="stat-num">{{$d.PendingRegistrationCount}}</div>
+    <div class="stat-label">Pending registrations</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-num">{{$d.PendingConductorCount}}</div>
+    <div class="stat-label">Conductor requests</div>
+  </div>
 </div>
 <div class="btn-group">
   <a href="{{.AdminPrefix}}/corridors" class="btn btn-secondary">Manage Corridors</a>
@@ -30,6 +38,9 @@
   </a>
   <a href="{{.AdminPrefix}}/comments" class="btn btn-secondary">Review Comments
     {{if gt $d.PendingCommentCount 0}}<span style="background:#dc2626;color:#fff;border-radius:999px;padding:0 .45rem;font-size:.75rem;margin-left:.25rem">{{$d.PendingCommentCount}}</span>{{end}}
+  </a>
+  <a href="{{.AdminPrefix}}/conductors" class="btn btn-secondary">Conductors
+    {{if gt $d.PendingConductorCount 0}}<span style="background:#dc2626;color:#fff;border-radius:999px;padding:0 .45rem;font-size:.75rem;margin-left:.25rem">{{$d.PendingConductorCount}}</span>{{end}}
   </a>
 </div>
 {{end}}

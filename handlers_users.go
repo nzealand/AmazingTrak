@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/mail"
 	"sort"
@@ -76,7 +77,9 @@ func (app *App) handleRegisterPost(w http.ResponseWriter, r *http.Request) {
 	if perDay <= 0 {
 		perDay = defaultRatePerDay
 	}
-	if blocked, reason := app.checkActionRateLimit("register", ipHash, perHour, perDay); blocked {
+	// Registration limit is site-wide (counts all new accounts in the window,
+	// not per-IP), with a wait-time message.
+	if blocked, reason := app.checkRegisterRateLimit(perHour, perDay); blocked {
 		fail(reason)
 		return
 	}
@@ -111,17 +114,17 @@ func (app *App) handleRegisterPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Email confirmation is optional: only issue a token when SMTP is configured
+	// Email confirmation is optional: only issue a token when email is enabled
 	// and the user supplied an address. Its absence never blocks registration.
 	confirmToken := ""
-	emailConfigured := app.smtpHost != "" && email != ""
+	emailConfigured := app.emailEnabled() && email != ""
 	if emailConfigured {
 		confirmToken = newToken()
 	}
 
 	res, err := app.db.Exec(
-		`INSERT INTO users (username, email, password_hash, status, email_confirmed, confirm_token) VALUES (?, ?, ?, 'pending', 0, ?)`,
-		username, email, string(hash), confirmToken,
+		`INSERT INTO users (username, email, password_hash, status, email_confirmed, confirm_token, confirm_sent_at) VALUES (?, ?, ?, 'pending', 0, ?, CASE WHEN ?='' THEN NULL ELSE CURRENT_TIMESTAMP END)`,
+		username, email, string(hash), confirmToken, confirmToken,
 	)
 	if err != nil {
 		fail("Could not create account: " + err.Error())
@@ -131,8 +134,9 @@ func (app *App) handleRegisterPost(w http.ResponseWriter, r *http.Request) {
 	app.recordActionRateLimit("register", ipHash)
 
 	if emailConfigured {
-		go app.sendConfirmEmail(email, confirmToken, app.baseURL)
+		go app.sendVerifyEmail(email, confirmToken, app.verifyExpiryHours())
 	}
+	app.maybeNotifyPending()
 
 	// Auto-login on successful registration.
 	if sid, err := app.createUserSession(userID, r); err == nil {
@@ -280,19 +284,21 @@ func (app *App) handleUserProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type profileData struct {
-		ProfileUser *User
-		Submissions []Suggestion
-		Badges      []badge
-		Comments    []Comment
+		ProfileUser  *User
+		Submissions  []Suggestion
+		Badges       []badge
+		Comments     []Comment
+		EmailEnabled bool
 	}
 	app.renderPublic(w, r, "user_profile.html", publicPage{
 		Title: profileUser.Username + " — " + getSiteName(),
 		Flash: getFlash(w, r),
 		Data: profileData{
-			ProfileUser: &profileUser,
-			Submissions: subs,
-			Badges:      badgesForSubmissions(subs),
-			Comments:    comments,
+			ProfileUser:  &profileUser,
+			Submissions:  subs,
+			Badges:       badgesForSubmissions(subs),
+			Comments:     comments,
+			EmailEnabled: app.emailEnabled(),
 		},
 	})
 }
@@ -310,6 +316,18 @@ func (app *App) handleConfirmEmail(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	// Reject expired links. Tokens older than the configured window can't be used;
+	// the user can request a fresh one.
+	var expired int
+	app.db.QueryRow(
+		`SELECT CASE WHEN confirm_sent_at IS NOT NULL AND confirm_sent_at < datetime('now', ?) THEN 1 ELSE 0 END FROM users WHERE id=?`,
+		fmt.Sprintf("-%d hours", app.verifyExpiryHours()), u.ID,
+	).Scan(&expired)
+	if expired == 1 {
+		setFlash(w, "That confirmation link has expired. Log in and request a new one.")
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
 	// Confirm the email and clear the token. Bump pending → confirmed, but never
 	// downgrade an already approved/auto-approved account.
 	newStatus := u.Status
@@ -319,4 +337,60 @@ func (app *App) handleConfirmEmail(w http.ResponseWriter, r *http.Request) {
 	app.db.Exec(`UPDATE users SET email_confirmed=1, confirm_token='', status=? WHERE id=?`, newStatus, u.ID)
 	setFlash(w, "Thanks — your email address is confirmed.")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// handleResendVerification re-sends the email-verification link to the logged-in
+// user. Rate limited to 3/day per user and 50/day site-wide. No-op (with a clear
+// message) when email is disabled or the account has no/confirmed address.
+func (app *App) handleResendVerification(w http.ResponseWriter, r *http.Request) {
+	user, csrf := app.getUserSession(r)
+	if user == nil {
+		setFlash(w, "Please log in first.")
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if r.FormValue("csrf_token") != csrf {
+		http.Error(w, "Invalid CSRF token", 403)
+		return
+	}
+	back := "/users/" + user.Username
+
+	if !app.emailEnabled() {
+		setFlash(w, "Email verification isn't available right now.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	if user.Email == "" {
+		setFlash(w, "Your account has no email address on file.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	if user.EmailConfirmed {
+		setFlash(w, "Your email is already confirmed.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+
+	// Rate limits: 3/day per user, 50/day across the whole site.
+	var userDay, siteDay int
+	app.db.QueryRow(`SELECT COUNT(*) FROM email_verifications WHERE user_id=? AND created_at > datetime('now','-1 day')`, user.ID).Scan(&userDay)
+	if userDay >= 3 {
+		setFlash(w, "You've requested too many verification emails today. Please try again tomorrow.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	app.db.QueryRow(`SELECT COUNT(*) FROM email_verifications WHERE created_at > datetime('now','-1 day')`).Scan(&siteDay)
+	if siteDay >= 50 {
+		setFlash(w, "The site has sent too many verification emails today. Please try again tomorrow.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+
+	token := newToken()
+	app.db.Exec(`UPDATE users SET confirm_token=?, confirm_sent_at=CURRENT_TIMESTAMP WHERE id=?`, token, user.ID)
+	app.db.Exec(`INSERT INTO email_verifications (user_id) VALUES (?)`, user.ID)
+	go app.sendVerifyEmail(user.Email, token, app.verifyExpiryHours())
+
+	setFlash(w, "A new verification email is on its way. Please check your inbox.")
+	http.Redirect(w, r, back, http.StatusSeeOther)
 }

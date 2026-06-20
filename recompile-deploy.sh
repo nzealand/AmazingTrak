@@ -14,9 +14,9 @@
 set -euo pipefail
 
 # Layout — matches setup-vps.sh.
-APP_USER="amazingtrak"
-APP_DIR="/opt/amazingtrak"
-DATA_DIR="/var/lib/amazingtrak"
+APP_USER="nv"
+APP_DIR="/home/nv/amazingtrak"
+DATA_DIR="/home/nv/amazingtrak"
 SERVICE="amazingtrak"
 GO_BIN="/usr/local/go/bin/go"
 DB_FILE="${DATA_DIR}/amazingtrak.db"

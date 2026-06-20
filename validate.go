@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -178,54 +179,109 @@ func validateAdminURL(raw string) (domain, normalized string, ok bool) {
 	return host, u.String(), true
 }
 
-func (app *App) checkRateLimit(ipHash string, perMinute, perHour, perDay int) (blocked bool, reason string) {
-	var minCount, hourCount, dayCount int
-	app.db.QueryRow(
-		`SELECT COUNT(*) FROM rate_limit_log WHERE created_at > datetime('now', '-1 minute')`,
-	).Scan(&minCount)
-	if minCount >= perMinute {
-		return true, "Please wait a moment before submitting again. Register and get approved to submit unlimited links."
+// waitMessage renders a human "try again" message from how long until a slot
+// frees up.
+func waitMessage(d time.Duration) string {
+	if d < time.Minute {
+		s := int(d.Seconds()) + 1
+		return fmt.Sprintf("Please wait %d second%s before trying again.", s, plural(s))
 	}
-	app.db.QueryRow(
-		`SELECT COUNT(*) FROM rate_limit_log WHERE created_at > datetime('now', '-1 hour')`,
-	).Scan(&hourCount)
-	if hourCount >= perHour {
-		return true, "Too many submissions this hour. Register and get approved to submit unlimited links."
+	if d < time.Hour {
+		m := int(d.Minutes()) + 1
+		return fmt.Sprintf("Please wait %d minute%s before trying again.", m, plural(m))
 	}
-	app.db.QueryRow(
-		`SELECT COUNT(*) FROM rate_limit_log WHERE created_at > datetime('now', '-24 hours')`,
-	).Scan(&dayCount)
-	if dayCount >= perDay {
-		return true, "Daily submission limit reached. Register and get approved to submit unlimited links."
+	h := int(d.Hours()) + 1
+	return fmt.Sprintf("Please try again in about %d hour%s.", h, plural(h))
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// rlExceeded reports whether the number of rate_limit_log rows matching `cond`
+// within windowSecs is at/over limit, and how long until the oldest such row
+// ages out of the window (i.e. when the caller may retry).
+func (app *App) rlExceeded(windowSecs, limit int, cond string, args ...interface{}) (bool, time.Duration) {
+	window := fmt.Sprintf("-%d seconds", windowSecs)
+	qargs := append([]interface{}{window}, args...)
+	var count int
+	app.db.QueryRow(`SELECT COUNT(*) FROM rate_limit_log WHERE created_at > datetime('now', ?)`+cond, qargs...).Scan(&count)
+	if count < limit {
+		return false, 0
+	}
+	var ageSecs float64
+	app.db.QueryRow(`SELECT COALESCE((julianday('now') - julianday(MIN(created_at))) * 86400, 0) FROM rate_limit_log WHERE created_at > datetime('now', ?)`+cond, qargs...).Scan(&ageSecs)
+	wait := time.Duration(float64(windowSecs)-ageSecs) * time.Second
+	if wait < time.Second {
+		wait = time.Second
+	}
+	return true, wait
+}
+
+// checkSuggestRateLimit enforces the per-minute/hour/day caps for media
+// suggestions (site-wide, action='suggest'), returning a wait-time message.
+func (app *App) checkSuggestRateLimit(perMinute, perHour, perDay int) (blocked bool, reason string) {
+	if b, d := app.rlExceeded(60, perMinute, ` AND action='suggest'`); b {
+		return true, waitMessage(d)
+	}
+	if b, d := app.rlExceeded(3600, perHour, ` AND action='suggest'`); b {
+		return true, waitMessage(d)
+	}
+	if b, d := app.rlExceeded(86400, perDay, ` AND action='suggest'`); b {
+		return true, waitMessage(d)
 	}
 	return false, ""
 }
 
 func (app *App) recordRateLimit(ipHash string) {
-	app.db.Exec(`INSERT INTO rate_limit_log (ip_hash) VALUES (?)`, ipHash)
+	app.db.Exec(`INSERT INTO rate_limit_log (ip_hash, action) VALUES (?, 'suggest')`, ipHash)
 }
 
-func (app *App) checkActionRateLimit(action, ipHash string, perHour, perDay int) (blocked bool, reason string) {
-	var hourCount, dayCount int
-	app.db.QueryRow(
-		`SELECT COUNT(*) FROM rate_limit_log WHERE action=? AND ip_hash=? AND created_at > datetime('now', '-1 hour')`,
-		action, ipHash,
-	).Scan(&hourCount)
-	if hourCount >= perHour {
-		return true, "Too many registrations from this network. Please try again later."
+// checkRegisterRateLimit enforces the site-wide new-account caps (counts all
+// registrations across the site within the window, not per-IP).
+func (app *App) checkRegisterRateLimit(perHour, perDay int) (blocked bool, reason string) {
+	if b, d := app.rlExceeded(3600, perHour, ` AND action='register'`); b {
+		return true, "Too many new accounts have been created across the site recently. " + waitMessage(d)
 	}
-	app.db.QueryRow(
-		`SELECT COUNT(*) FROM rate_limit_log WHERE action=? AND ip_hash=? AND created_at > datetime('now', '-24 hours')`,
-		action, ipHash,
-	).Scan(&dayCount)
-	if dayCount >= perDay {
-		return true, "Daily registration limit reached. Please try again tomorrow."
+	if b, d := app.rlExceeded(86400, perDay, ` AND action='register'`); b {
+		return true, "The daily new-account limit for the site has been reached. " + waitMessage(d)
 	}
 	return false, ""
 }
 
 func (app *App) recordActionRateLimit(action, ipHash string) {
 	app.db.Exec(`INSERT INTO rate_limit_log (ip_hash, action) VALUES (?, ?)`, ipHash, action)
+}
+
+// checkUserCommentRateLimit enforces per-user comment caps (hour + day), with a
+// wait-time message derived from the comments table.
+func (app *App) checkUserCommentRateLimit(userID int64, perHour, perDay int) (blocked bool, reason string) {
+	if b, d := app.commentWindowExceeded(userID, 3600, perHour); b {
+		return true, waitMessage(d)
+	}
+	if b, d := app.commentWindowExceeded(userID, 86400, perDay); b {
+		return true, waitMessage(d)
+	}
+	return false, ""
+}
+
+func (app *App) commentWindowExceeded(userID int64, windowSecs, limit int) (bool, time.Duration) {
+	window := fmt.Sprintf("-%d seconds", windowSecs)
+	var count int
+	app.db.QueryRow(`SELECT COUNT(*) FROM comments WHERE user_id=? AND created_at > datetime('now', ?)`, userID, window).Scan(&count)
+	if count < limit {
+		return false, 0
+	}
+	var ageSecs float64
+	app.db.QueryRow(`SELECT COALESCE((julianday('now') - julianday(MIN(created_at))) * 86400, 0) FROM comments WHERE user_id=? AND created_at > datetime('now', ?)`, userID, window).Scan(&ageSecs)
+	wait := time.Duration(float64(windowSecs)-ageSecs) * time.Second
+	if wait < time.Second {
+		wait = time.Second
+	}
+	return true, wait
 }
 
 func (app *App) checkDuplicateSuggestion(trainID int64, normURL string) bool {
@@ -311,6 +367,15 @@ func (app *App) checkDuplicateComment(trainID, userID int64, body string) bool {
 	app.db.QueryRow(
 		`SELECT COUNT(*) FROM comments WHERE train_id=? AND user_id=? AND body=? AND status IN ('pending','approved')`,
 		trainID, userID, body,
+	).Scan(&count)
+	return count > 0
+}
+
+func (app *App) checkDuplicateCorridorComment(corridorID, userID int64, body string) bool {
+	var count int
+	app.db.QueryRow(
+		`SELECT COUNT(*) FROM comments WHERE corridor_id=? AND user_id=? AND body=? AND status IN ('pending','approved')`,
+		corridorID, userID, body,
 	).Scan(&count)
 	return count > 0
 }

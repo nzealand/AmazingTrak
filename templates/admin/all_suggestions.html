@@ -21,11 +21,12 @@
 </div>
 {{if $d.Suggestions}}
 <table class="admin-table">
-  <thead><tr><th>Train</th><th>Title</th><th>URL</th><th>Type</th><th>Comment</th><th>Status</th><th>Submitted</th><th style="width:22%">Actions</th></tr></thead>
+  <thead><tr><th>Train</th><th>By</th><th>Title</th><th>URL</th><th>Type</th><th>Comment</th><th>Status</th><th>Submitted</th><th style="width:22%">Actions</th></tr></thead>
   <tbody>
     {{range $d.Suggestions}}
     <tr>
       <td><a href="{{$.AdminPrefix}}/trains/{{.TrainID}}/media">{{.TrainName}}</a></td>
+      <td style="font-size:.85rem">{{if .Username}}<a href="/users/{{.Username}}" target="_blank">{{.Username}}</a>{{else}}<span style="color:var(--muted)">Anonymous</span>{{end}}</td>
       <td style="max-width:200px;font-size:.85rem">{{if .Title}}{{truncate .Title 80}}{{else}}<span style="color:var(--muted)">—</span>{{end}}</td>
       <td style="max-width:240px;word-break:break-all"><a href="{{.URL}}" target="_blank" rel="noopener">{{truncate .URL 50}}</a></td>
       <td>{{mediaLabel .MediaType}}</td>

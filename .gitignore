@@ -4,3 +4,4 @@ amazingtrak.db-wal
 uploads/
 .env
 amazingtrak
+app.log

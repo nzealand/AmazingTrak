@@ -65,11 +65,8 @@ ADMIN_PASS=$(ask_secret    "Admin password")
 [[ -n "$ADMIN_PASS" ]] || fatal "Admin password is required."
 
 echo ""
-echo -e "${BLD}Email notifications (optional — press Enter to skip)${RST}"
-SMTP_HOST=$(ask      "SMTP host")
-SMTP_PORT=$(ask      "SMTP port" "587")
-SMTP_USER=$(ask      "SMTP username")
-SMTP_PASS=$(ask_secret "SMTP password")
+echo -e "${BLD}Email (optional — press Enter to skip; powered by Resend)${RST}"
+RESEND_API_KEY=$(ask_secret "Resend API key")
 NOTIFY_EMAIL=$(ask   "Notification email for suggestions")
 
 echo ""
@@ -160,10 +157,7 @@ BASE_URL=${BASE_URL}
 ADMIN_SECRET=${ADMIN_SECRET}
 ADMIN_USERNAME=${ADMIN_USER}
 ADMIN_PASSWORD=${ADMIN_PASS}
-SMTP_HOST=${SMTP_HOST}
-SMTP_PORT=${SMTP_PORT}
-SMTP_USER=${SMTP_USER}
-SMTP_PASS=${SMTP_PASS}
+RESEND_API_KEY=${RESEND_API_KEY}
 ENV
 chmod 600 "${APP_DIR}/.env"
 chown "${APP_USER}:${APP_USER}" "${APP_DIR}/.env"
@@ -318,7 +312,7 @@ systemctl reload nginx
 if [[ "${SETUP_SSL,,}" == "y" ]]; then
   info "Obtaining SSL certificate via Let's Encrypt…"
   certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos \
-    --email "${SMTP_USER:-admin@${DOMAIN}}" --redirect \
+    --email "${NOTIFY_EMAIL:-admin@${DOMAIN}}" --redirect \
     || warn "certbot failed — run 'certbot --nginx -d ${DOMAIN}' manually after DNS propagates."
 fi
 

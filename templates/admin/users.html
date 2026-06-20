@@ -18,7 +18,7 @@
     <tbody>
       {{range $d.Users}}
       <tr>
-        <td><a href="/users/{{.Username}}" target="_blank" title="View public profile">{{.Username}}</a></td>
+        <td><a href="{{$.AdminPrefix}}/users/{{.ID}}/submissions" title="View submissions">{{.Username}}</a></td>
         <td style="font-size:.85rem">
           {{if .Email}}{{.Email}} {{if .EmailConfirmed}}<span title="Email confirmed" style="color:#16a34a">✓</span>{{else}}<span title="Not confirmed" style="color:var(--muted)">·</span>{{end}}{{else}}<span style="color:var(--muted)">—</span>{{end}}
         </td>
@@ -47,7 +47,11 @@
             </form>
             {{end}}
             {{if not .IsApproved}}
-            <form method="post" action="{{$.AdminPrefix}}/users/{{.ID}}/delete" onsubmit="return confirm('Delete this user? Non-rare submissions are removed; rare submissions are preserved.')">
+            <form method="post" action="{{$.AdminPrefix}}/users/{{.ID}}/anonymize" onsubmit="return confirm('Anonymize {{.Username}}?\n\nThis will:\n• Rename them to anonymous[N]\n• Clear their email address\n• Reject all their comments\n\nTheir submissions remain attributed to the new anonymous username. This cannot be undone.')">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn btn-sm btn-secondary" type="submit">Anonymize</button>
+            </form>
+            <form method="post" action="{{$.AdminPrefix}}/users/{{.ID}}/delete" onsubmit="return confirm('Delete {{.Username}}?{{if or .VideoCount .CommentCount}}\nThis also deletes {{.VideoCount}} video{{if ne .VideoCount 1}}s{{end}} and {{.CommentCount}} comment{{if ne .CommentCount 1}}s{{end}} by this user.{{end}}\nNon-rare submissions are removed; rare submissions are preserved.')">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button class="btn btn-sm btn-danger" type="submit">Delete</button>
             </form>

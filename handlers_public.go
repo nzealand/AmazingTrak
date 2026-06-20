@@ -296,33 +296,57 @@ func (app *App) handleCorridor(w http.ResponseWriter, r *http.Request) {
 
 	// Conductor affordances: CanManage when the viewer conducts this corridor;
 	// CanRequest when a logged-in non-spammer (who isn't already the conductor)
-	// could request the role; HasRequested when they already have one pending.
+	// could request the role; HasRequested when they already have one pending;
+	// NeedsVerify when email is on and they must verify before requesting.
+	emailOn := app.emailEnabled()
 	canRequest := false
 	hasRequested := false
+	needsVerify := false
 	if viewer != nil && !viewer.IsSpammer && !canManage && !corridor.ConductorUserID.Valid {
 		if pending, _ := pendingConductorRequest(app.db, corridor.ID, viewer.ID); pending {
 			hasRequested = true
+		} else if emailOn && !viewer.EmailConfirmed {
+			needsVerify = true
 		} else {
 			canRequest = true
 		}
 	}
 
+	// Corridor comments: approved ones for everyone, plus the viewer's own pending.
+	corridorComments, _ := commentsByCorridorID(app.db, corridor.ID, "approved")
+	var ownPendingComments []Comment
+	if viewer != nil {
+		setTimingCookie(w)
+		rows, _ := app.db.Query(
+			commentSelectBase+` WHERE c.corridor_id=? AND c.user_id=? AND c.status='pending' ORDER BY c.created_at DESC`,
+			corridor.ID, viewer.ID,
+		)
+		if rows != nil {
+			ownPendingComments, _ = scanComments(rows)
+			rows.Close()
+		}
+	}
+
 	type corridorDetail struct {
-		Corridor     Corridor
-		Trains       []Train
-		Media        []Media
-		BestVideo    *Media
-		Stops        []Stop
-		CanManage    bool
-		CanRequest   bool
-		HasRequested bool
+		Corridor           Corridor
+		Trains             []Train
+		Media              []Media
+		BestVideo          *Media
+		Stops              []Stop
+		CanManage          bool
+		CanRequest         bool
+		HasRequested       bool
+		NeedsVerify        bool
+		Comments           []Comment
+		OwnPendingComments []Comment
 	}
 	app.renderPublic(w, r, "corridor.html", publicPage{
 		Title: corridor.Name + " — AmazingTrak",
 		Flash: getFlash(w, r),
 		Data: corridorDetail{
 			Corridor: corridor, Trains: trains, Media: media, BestVideo: bestVideo, Stops: stops,
-			CanManage: canManage, CanRequest: canRequest, HasRequested: hasRequested,
+			CanManage: canManage, CanRequest: canRequest, HasRequested: hasRequested, NeedsVerify: needsVerify,
+			Comments: corridorComments, OwnPendingComments: ownPendingComments,
 		},
 	})
 }
@@ -536,24 +560,38 @@ func (app *App) handleSuggestSubmit(w http.ResponseWriter, r *http.Request) {
 
 	ipHash := hashIP(r)
 
-	// Approved/auto-approved users bypass the anonymous rate limit.
+	// Rate limits by tier: conductors are unlimited; approved/auto-approved users
+	// get the trusted tier; everyone else (anonymous + unapproved) gets the
+	// standard tier. A newly-registered user's very first submission also bypasses
+	// the per-minute throttle so they don't have to wait right after signing up.
 	currentUser, _ := app.getUserSession(r)
-	rateLimitApplies := currentUser == nil || (!currentUser.IsApproved() && !currentUser.IsSpammer)
-	if rateLimitApplies {
+	conductor := currentUser != nil && isAnyConductor(app.db, currentUser.ID)
+	if !conductor {
 		prefs, _ := getSitePrefs(app.db)
 		perMin := prefs.RatePerMinute
 		if perMin <= 0 {
 			perMin = defaultRatePerMin
 		}
-		perHour := prefs.RatePerHour
+		perHour, perDay := prefs.RatePerHour, prefs.RatePerDay
+		if currentUser != nil && currentUser.IsApproved() {
+			perHour, perDay = prefs.TrustedRatePerHour, prefs.TrustedRatePerDay
+		}
 		if perHour <= 0 {
 			perHour = defaultRatePerHour
 		}
-		perDay := prefs.RatePerDay
 		if perDay <= 0 {
 			perDay = defaultRatePerDay
 		}
-		if blocked, reason := app.checkRateLimit(ipHash, perMin, perHour, perDay); blocked {
+		// First-submission-free: a logged-in user with no prior suggestions skips
+		// the per-minute wait once.
+		if currentUser != nil {
+			var priorSubs int
+			app.db.QueryRow(`SELECT COUNT(*) FROM suggestions WHERE user_id=?`, currentUser.ID).Scan(&priorSubs)
+			if priorSubs == 0 {
+				perMin = 1 << 30 // effectively unlimited for this one submission
+			}
+		}
+		if blocked, reason := app.checkSuggestRateLimit(perMin, perHour, perDay); blocked {
 			setFlash(w, reason)
 			http.Redirect(w, r, "/trains/"+slug+"/suggest", http.StatusSeeOther)
 			return
@@ -653,6 +691,12 @@ func (app *App) handleSuggestSubmit(w http.ResponseWriter, r *http.Request) {
 
 	app.recordRateLimit(ipHash)
 
+	// Notify the admin when this submission moves the pending total across a
+	// threshold (only pending — auto-approved ones never need review).
+	if !autoApprove {
+		app.maybeNotifyPending()
+	}
+
 	// Best-effort email notification
 	if prefs, err := getSitePrefs(app.db); err == nil && prefs.NotificationEmail != "" {
 		sug := Suggestion{ID: sugID, URL: normURL, Title: title, MediaType: mediaType, SourceDomain: domain}
@@ -664,10 +708,7 @@ func (app *App) handleSuggestSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCommentSubmit accepts a comment on a train from a logged-in registered
-// user. Anonymous visitors never reach here (the route is gated by requireUser).
-// Comments enter as 'pending' and are moderated by an admin, mirroring the
-// suggestion flow: honeypot + timing bot defenses, per-IP rate limiting (which
-// approved/trusted contributors bypass), and duplicate detection.
+// user (route gated by requireUser).
 func (app *App) handleCommentSubmit(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	train, err := trainBySlug(app.db, slug)
@@ -679,81 +720,75 @@ func (app *App) handleCommentSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not available", 400)
 		return
 	}
+	app.submitComment(w, r, train.ID, 0, "/trains/"+slug+"#comments")
+}
 
+// handleCorridorCommentSubmit accepts a comment on a corridor (route gated by
+// requireUser).
+func (app *App) handleCorridorCommentSubmit(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	corridor, err := corridorBySlug(app.db, slug)
+	if err == sql.ErrNoRows {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil || !corridor.IsActive {
+		http.Error(w, "Not available", 400)
+		return
+	}
+	app.submitComment(w, r, 0, corridor.ID, "/corridors/"+slug+"#comments")
+}
+
+// submitComment is the shared comment pipeline for trains and corridors: exactly
+// one of trainID/corridorID is non-zero. Comments enter as 'pending' and are
+// moderated, with honeypot + timing bot defenses, tiered per-user rate limits
+// (conductors unlimited, approved users get the trusted tier), duplicate
+// detection, and auto-approval of an approved user's first few comments.
+func (app *App) submitComment(w http.ResponseWriter, r *http.Request, trainID, corridorID int64, commentURL string) {
 	currentUser, csrf := app.getUserSession(r)
 	if currentUser == nil {
 		setFlash(w, "Please log in to comment.")
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Bad request", 400)
 		return
 	}
-
-	// CSRF: comments are an authenticated action, so validate the session token.
 	if r.FormValue("csrf_token") != csrf {
 		http.Error(w, "Invalid CSRF token", 403)
 		return
 	}
 
-	commentURL := "/trains/" + slug + "#comments"
-
-	// Silently drop spammer comments — fake success without saving.
-	if currentUser.IsSpammer {
+	// Silently drop spammer comments, and silently succeed on honeypot hits.
+	if currentUser.IsSpammer ||
+		r.FormValue("website") != "" || r.FormValue("a") != "" || r.FormValue("b") != "ok" {
 		setFlash(w, "Thanks! Your comment has been submitted for review.")
 		http.Redirect(w, r, commentURL, http.StatusSeeOther)
 		return
 	}
-
-	// Honeypot fields — silently succeed without saving.
-	if r.FormValue("website") != "" || r.FormValue("a") != "" || r.FormValue("b") != "ok" {
-		setFlash(w, "Thanks! Your comment has been submitted for review.")
-		http.Redirect(w, r, commentURL, http.StatusSeeOther)
-		return
-	}
-
-	// Timing check.
 	if !checkTiming(r) {
 		setFlash(w, "Please take a moment to write your comment.")
 		http.Redirect(w, r, commentURL, http.StatusSeeOther)
 		return
 	}
 
-	ipHash := hashIP(r)
-
-	// Per-user daily limit: max 10 comments per day.
-	var userDayCount int
-	app.db.QueryRow(`SELECT COUNT(*) FROM comments WHERE user_id=? AND created_at > datetime('now', '-1 day')`, currentUser.ID).Scan(&userDayCount)
-	if userDayCount >= 10 {
-		setFlash(w, "You've reached your daily comment limit. Please come back tomorrow.")
-		http.Redirect(w, r, commentURL, http.StatusSeeOther)
-		return
-	}
-
-	// Site-wide weekly cap: max 100 comments across all users per week.
-	var weekCount int
-	app.db.QueryRow(`SELECT COUNT(*) FROM comments WHERE created_at > datetime('now', '-7 days')`).Scan(&weekCount)
-	if weekCount >= 100 {
-		setFlash(w, "The site has reached its weekly comment limit. Please check back next week.")
-		http.Redirect(w, r, commentURL, http.StatusSeeOther)
-		return
-	}
-
-	// Approved/auto-approved contributors bypass the IP rate limit.
-	if !currentUser.IsApproved() {
+	// Rate limits: conductors are unlimited; approved users get the trusted tier;
+	// everyone else gets the standard tier. Messages tell the user how long to wait.
+	if !isAnyConductor(app.db, currentUser.ID) {
 		prefs, _ := getSitePrefs(app.db)
-		perHour := prefs.CommentRatePerHour
+		perHour, perDay := prefs.CommentRatePerHour, prefs.CommentRatePerDay
+		if currentUser.IsApproved() {
+			perHour, perDay = prefs.TrustedCommentRatePerHour, prefs.TrustedCommentRatePerDay
+		}
 		if perHour <= 0 {
 			perHour = 10
 		}
-		perDay := prefs.CommentRatePerDay
 		if perDay <= 0 {
 			perDay = 50
 		}
-		if blocked, _ := app.checkActionRateLimit("comment", ipHash, perHour, perDay); blocked {
-			setFlash(w, "You're commenting too quickly. Please wait a while before posting again.")
+		if blocked, reason := app.checkUserCommentRateLimit(currentUser.ID, perHour, perDay); blocked {
+			setFlash(w, reason)
 			http.Redirect(w, r, commentURL, http.StatusSeeOther)
 			return
 		}
@@ -766,7 +801,13 @@ func (app *App) handleCommentSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if app.checkDuplicateComment(train.ID, currentUser.ID, body) {
+	dup := false
+	if corridorID != 0 {
+		dup = app.checkDuplicateCorridorComment(corridorID, currentUser.ID, body)
+	} else {
+		dup = app.checkDuplicateComment(trainID, currentUser.ID, body)
+	}
+	if dup {
 		setFlash(w, "You've already posted that comment.")
 		http.Redirect(w, r, commentURL, http.StatusSeeOther)
 		return
@@ -782,23 +823,26 @@ func (app *App) handleCommentSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, err = app.db.Exec(
-		`INSERT INTO comments (train_id, user_id, body, status, submitter_ip_hash) VALUES (?, ?, ?, ?, ?)`,
-		train.ID, currentUser.ID, body, status, ipHash,
+	var trainVal, corridorVal interface{}
+	if trainID != 0 {
+		trainVal = trainID
+	}
+	if corridorID != 0 {
+		corridorVal = corridorID
+	}
+	_, err := app.db.Exec(
+		`INSERT INTO comments (train_id, corridor_id, user_id, body, status, submitter_ip_hash) VALUES (?, ?, ?, ?, ?, ?)`,
+		trainVal, corridorVal, currentUser.ID, body, status, hashIP(r),
 	)
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}
-
-	if !currentUser.IsApproved() {
-		app.recordActionRateLimit("comment", ipHash)
-	}
-
-	if status == "approved" {
-		setFlash(w, "Your comment has been posted.")
-	} else {
+	if status == "pending" {
+		app.maybeNotifyPending()
 		setFlash(w, "Thanks! Your comment has been submitted and will appear once an admin approves it.")
+	} else {
+		setFlash(w, "Your comment has been posted.")
 	}
 	http.Redirect(w, r, commentURL, http.StatusSeeOther)
 }

@@ -171,6 +171,16 @@ type SitePreferences struct {
 	SiteName            string
 	FaviconPath         string
 	AdminTheme          string
+	// Email (Resend) — all optional; email is off unless EmailEnabled and a key is configured.
+	SenderEmail       string
+	EmailEnabled      bool
+	VerifyExpiryHours int
+	// Trusted-tier (approved/auto_approved users) rate limits.
+	TrustedRatePerHour        int
+	TrustedRatePerDay         int
+	TrustedCommentRatePerHour int
+	TrustedCommentRatePerDay  int
+	PendingNotifyLevel        int
 }
 
 type StationTrain struct {
@@ -204,6 +214,8 @@ type Suggestion struct {
 	IsSpam             bool
 	TrainName          string
 	TrainSlug          string
+	UserID             int64  // 0 when submitted anonymously
+	Username           string // submitter username, "" when anonymous
 }
 
 // StatusLabel renders the status for display, distinguishing spam-flagged
@@ -229,7 +241,8 @@ func (s *Suggestion) RarityCount() int {
 // suggestions: it enters as 'pending' and an admin approves or rejects it.
 type Comment struct {
 	ID              int64
-	TrainID         int64
+	TrainID         int64 // 0 for corridor comments
+	CorridorID      int64 // 0 for train comments
 	UserID          int64
 	Body            string
 	Status          string
@@ -240,6 +253,26 @@ type Comment struct {
 	Username        string
 	TrainName       string
 	TrainSlug       string
+	CorridorName    string
+	CorridorSlug    string
+}
+
+// IsCorridor reports whether the comment targets a corridor rather than a train.
+func (c *Comment) IsCorridor() bool { return c.CorridorID != 0 }
+
+// TargetName / TargetURL render where the comment was posted, for admin lists.
+func (c *Comment) TargetName() string {
+	if c.IsCorridor() {
+		return c.CorridorName
+	}
+	return c.TrainName
+}
+
+func (c *Comment) TargetURL() string {
+	if c.IsCorridor() {
+		return "/corridors/" + c.CorridorSlug
+	}
+	return "/trains/" + c.TrainSlug
 }
 
 type AdminUser struct {
@@ -288,6 +321,8 @@ type User struct {
 	CreatedAt       string
 	LastLoginAt     sql.NullString
 	SubmissionCount int
+	VideoCount      int
+	CommentCount    int
 	IsSpammer       bool
 }
 
@@ -450,6 +485,57 @@ func isConductorOf(db *sql.DB, userID, corridorID int64) (bool, error) {
 	var n int
 	err := db.QueryRow(`SELECT COUNT(*) FROM corridors WHERE id=? AND conductor_user_id=?`, corridorID, userID).Scan(&n)
 	return n > 0, err
+}
+
+// isAnyConductor reports whether the user conducts at least one corridor.
+// Conductors bypass submission and comment rate limits.
+func isAnyConductor(db *sql.DB, userID int64) bool {
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM corridors WHERE conductor_user_id=?`, userID).Scan(&n)
+	return n > 0
+}
+
+// ScheduleStop is one row of the conductor schedule editor: a corridor station
+// (a *possible* stop) plus the train's current times for it, if the train stops
+// there. Stops=false means the train does not currently stop at this station.
+type ScheduleStop struct {
+	StopID             int64
+	StopName           string
+	StationCode        string
+	StopSlug           string
+	SortOrder          int
+	Stops              bool
+	ScheduledArrival   string
+	ScheduledDeparture string
+	RunsWeekday        bool
+	RunsWeekend        bool
+}
+
+// corridorStopsWithTrainTimes returns every station in the train's corridor,
+// joined to this train's existing schedule rows (when present). Stations the
+// train doesn't yet stop at come back with Stops=false and default day flags.
+func corridorStopsWithTrainTimes(db *sql.DB, trainID, corridorID int64) ([]ScheduleStop, error) {
+	rows, err := db.Query(`SELECT s.id, s.name, COALESCE(s.station_code,''), COALESCE(s.slug,''), s.sort_order,
+		CASE WHEN ts.id IS NOT NULL THEN 1 ELSE 0 END,
+		COALESCE(ts.scheduled_arrival,''), COALESCE(ts.scheduled_departure,''),
+		COALESCE(ts.runs_weekday,1), COALESCE(ts.runs_weekend,1)
+		FROM stops s
+		LEFT JOIN train_stops ts ON ts.stop_id=s.id AND ts.train_id=?
+		WHERE s.corridor_id=? ORDER BY s.sort_order`, trainID, corridorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ScheduleStop
+	for rows.Next() {
+		var s ScheduleStop
+		if err := rows.Scan(&s.StopID, &s.StopName, &s.StationCode, &s.StopSlug, &s.SortOrder,
+			&s.Stops, &s.ScheduledArrival, &s.ScheduledDeparture, &s.RunsWeekday, &s.RunsWeekend); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 func setCorridorConductor(db *sql.DB, corridorID, userID int64) error {
@@ -784,10 +870,17 @@ func trainsByStopID(db *sql.DB, stopID int64) ([]StationTrain, error) {
 
 func getSitePrefs(db *sql.DB) (SitePreferences, error) {
 	var p SitePreferences
-	err := db.QueryRow(`SELECT id, default_theme, COALESCE(notification_email,''), COALESCE(rate_per_minute,1), COALESCE(rate_per_hour,5), COALESCE(rate_per_day,20), COALESCE(register_rate_per_hour,5), COALESCE(register_rate_per_day,20), COALESCE(comment_rate_per_hour,10), COALESCE(comment_rate_per_day,50), COALESCE(site_name,'AmazingTrak'), COALESCE(favicon_path,''), COALESCE(admin_theme,'default') FROM site_preferences WHERE id=1`).
-		Scan(&p.ID, &p.DefaultTheme, &p.NotificationEmail, &p.RatePerMinute, &p.RatePerHour, &p.RatePerDay, &p.RegisterRatePerHour, &p.RegisterRatePerDay, &p.CommentRatePerHour, &p.CommentRatePerDay, &p.SiteName, &p.FaviconPath, &p.AdminTheme)
+	err := db.QueryRow(`SELECT id, default_theme, COALESCE(notification_email,''), COALESCE(rate_per_minute,1), COALESCE(rate_per_hour,5), COALESCE(rate_per_day,20), COALESCE(register_rate_per_hour,5), COALESCE(register_rate_per_day,20), COALESCE(comment_rate_per_hour,10), COALESCE(comment_rate_per_day,50), COALESCE(site_name,'AmazingTrak'), COALESCE(favicon_path,''), COALESCE(admin_theme,'default'),
+		COALESCE(sender_email,''), COALESCE(email_enabled,0), COALESCE(verify_expiry_hours,24),
+		COALESCE(trusted_rate_per_hour,30), COALESCE(trusted_rate_per_day,100), COALESCE(trusted_comment_rate_per_hour,30), COALESCE(trusted_comment_rate_per_day,100),
+		COALESCE(pending_notify_level,0) FROM site_preferences WHERE id=1`).
+		Scan(&p.ID, &p.DefaultTheme, &p.NotificationEmail, &p.RatePerMinute, &p.RatePerHour, &p.RatePerDay, &p.RegisterRatePerHour, &p.RegisterRatePerDay, &p.CommentRatePerHour, &p.CommentRatePerDay, &p.SiteName, &p.FaviconPath, &p.AdminTheme,
+			&p.SenderEmail, &p.EmailEnabled, &p.VerifyExpiryHours,
+			&p.TrustedRatePerHour, &p.TrustedRatePerDay, &p.TrustedCommentRatePerHour, &p.TrustedCommentRatePerDay,
+			&p.PendingNotifyLevel)
 	if err == sql.ErrNoRows {
-		return SitePreferences{DefaultTheme: "auto", RatePerMinute: 1, RatePerHour: 5, RatePerDay: 20, RegisterRatePerHour: 5, RegisterRatePerDay: 20, CommentRatePerHour: 10, CommentRatePerDay: 50, SiteName: "AmazingTrak", AdminTheme: "default"}, nil
+		return SitePreferences{DefaultTheme: "auto", RatePerMinute: 1, RatePerHour: 5, RatePerDay: 20, RegisterRatePerHour: 5, RegisterRatePerDay: 20, CommentRatePerHour: 10, CommentRatePerDay: 50, SiteName: "AmazingTrak", AdminTheme: "default",
+			VerifyExpiryHours: 24, TrustedRatePerHour: 30, TrustedRatePerDay: 100, TrustedCommentRatePerHour: 30, TrustedCommentRatePerDay: 100}, nil
 	}
 	return p, err
 }
@@ -844,7 +937,9 @@ func userByConfirmToken(db *sql.DB, token string) (User, error) {
 // allUsers returns every registered user with a count of their submissions.
 func allUsers(db *sql.DB) ([]User, error) {
 	rows, err := db.Query(`SELECT ` + userSelectCols + `,
-		(SELECT COUNT(*) FROM suggestions WHERE user_id = users.id)
+		(SELECT COUNT(*) FROM suggestions WHERE user_id = users.id),
+		(SELECT COUNT(*) FROM media WHERE user_id = users.id AND media_type='video'),
+		(SELECT COUNT(*) FROM comments WHERE user_id = users.id)
 		FROM users ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -853,7 +948,7 @@ func allUsers(db *sql.DB) ([]User, error) {
 	var out []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.Status, &u.EmailConfirmed, &u.ConfirmToken, &u.CreatedAt, &u.LastLoginAt, &u.IsSpammer, &u.SubmissionCount); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.Status, &u.EmailConfirmed, &u.ConfirmToken, &u.CreatedAt, &u.LastLoginAt, &u.IsSpammer, &u.SubmissionCount, &u.VideoCount, &u.CommentCount); err != nil {
 			return nil, err
 		}
 		out = append(out, u)
@@ -866,8 +961,8 @@ func submissionsByUserID(db *sql.DB, userID int64) ([]Suggestion, error) {
 	q := `SELECT s.id, s.train_id, s.url, COALESCE(s.title,''), COALESCE(s.caption,''), COALESCE(s.tags,''), s.media_type, COALESCE(s.source_domain,''),
 		s.status, COALESCE(s.submitter_ip_hash,''), COALESCE(s.submitter_user_agent,''),
 		COALESCE(s.rejection_reason,''), s.created_at, COALESCE(s.reviewed_at,''), s.auto_approved, s.is_spam,
-		t.display_name, t.slug
-		FROM suggestions s JOIN trains t ON t.id=s.train_id WHERE s.user_id=? ORDER BY s.created_at DESC`
+		t.display_name, t.slug, COALESCE(s.user_id,0), COALESCE(u.username,'')
+		FROM suggestions s JOIN trains t ON t.id=s.train_id LEFT JOIN users u ON u.id=s.user_id WHERE s.user_id=? ORDER BY s.created_at DESC`
 	rows, err := db.Query(q, userID)
 	if err != nil {
 		return nil, err
@@ -882,8 +977,8 @@ func allSuggestions(db *sql.DB, status string) ([]Suggestion, error) {
 	q := `SELECT s.id, s.train_id, s.url, COALESCE(s.title,''), COALESCE(s.caption,''), COALESCE(s.tags,''), s.media_type, COALESCE(s.source_domain,''),
 		s.status, COALESCE(s.submitter_ip_hash,''), COALESCE(s.submitter_user_agent,''),
 		COALESCE(s.rejection_reason,''), s.created_at, COALESCE(s.reviewed_at,''), s.auto_approved, s.is_spam,
-		t.display_name, t.slug
-		FROM suggestions s JOIN trains t ON t.id=s.train_id`
+		t.display_name, t.slug, COALESCE(s.user_id,0), COALESCE(u.username,'')
+		FROM suggestions s JOIN trains t ON t.id=s.train_id LEFT JOIN users u ON u.id=s.user_id`
 	if status != "" {
 		q += ` WHERE s.status=?`
 	}
@@ -906,8 +1001,8 @@ func suggestionsByTrainID(db *sql.DB, trainID int64, status string) ([]Suggestio
 	q := `SELECT s.id, s.train_id, s.url, COALESCE(s.title,''), COALESCE(s.caption,''), COALESCE(s.tags,''), s.media_type, COALESCE(s.source_domain,''),
 		s.status, COALESCE(s.submitter_ip_hash,''), COALESCE(s.submitter_user_agent,''),
 		COALESCE(s.rejection_reason,''), s.created_at, COALESCE(s.reviewed_at,''), s.auto_approved, s.is_spam,
-		t.display_name, t.slug
-		FROM suggestions s JOIN trains t ON t.id=s.train_id WHERE s.train_id=?`
+		t.display_name, t.slug, COALESCE(s.user_id,0), COALESCE(u.username,'')
+		FROM suggestions s JOIN trains t ON t.id=s.train_id LEFT JOIN users u ON u.id=s.user_id WHERE s.train_id=?`
 	args := []interface{}{trainID}
 	if status != "" {
 		q += ` AND s.status=?`
@@ -943,7 +1038,7 @@ func scanSuggestions(rows *sql.Rows) ([]Suggestion, error) {
 		if err := rows.Scan(&s.ID, &s.TrainID, &s.URL, &s.Title, &s.Caption, &s.Tags, &s.MediaType, &s.SourceDomain,
 			&s.Status, &s.SubmitterIPHash, &s.SubmitterUserAgent,
 			&s.RejectionReason, &s.CreatedAt, &s.ReviewedAt, &s.AutoApproved, &s.IsSpam,
-			&s.TrainName, &s.TrainSlug); err != nil {
+			&s.TrainName, &s.TrainSlug, &s.UserID, &s.Username); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -953,27 +1048,48 @@ func scanSuggestions(rows *sql.Rows) ([]Suggestion, error) {
 
 // ----- Comment queries -----
 
-const commentSelectBase = `SELECT c.id, c.train_id, c.user_id, c.body, c.status,
+const commentSelectBase = `SELECT c.id, COALESCE(c.train_id,0), COALESCE(c.corridor_id,0), c.user_id, c.body, c.status,
 	COALESCE(c.submitter_ip_hash,''), COALESCE(c.rejection_reason,''),
 	c.created_at, COALESCE(c.reviewed_at,''),
-	u.username, t.display_name, t.slug
+	u.username,
+	COALESCE(t.display_name,''), COALESCE(t.slug,''),
+	COALESCE(co.name,''), COALESCE(co.slug,'')
 	FROM comments c
 	JOIN users u ON u.id=c.user_id
-	JOIN trains t ON t.id=c.train_id`
+	LEFT JOIN trains t ON t.id=c.train_id
+	LEFT JOIN corridors co ON co.id=c.corridor_id`
 
 func scanComments(rows *sql.Rows) ([]Comment, error) {
 	var out []Comment
 	for rows.Next() {
 		var c Comment
-		if err := rows.Scan(&c.ID, &c.TrainID, &c.UserID, &c.Body, &c.Status,
+		if err := rows.Scan(&c.ID, &c.TrainID, &c.CorridorID, &c.UserID, &c.Body, &c.Status,
 			&c.SubmitterIPHash, &c.RejectionReason,
 			&c.CreatedAt, &c.ReviewedAt,
-			&c.Username, &c.TrainName, &c.TrainSlug); err != nil {
+			&c.Username, &c.TrainName, &c.TrainSlug,
+			&c.CorridorName, &c.CorridorSlug); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// commentsByCorridorID returns comments on a corridor, optionally filtered by status.
+func commentsByCorridorID(db *sql.DB, corridorID int64, status string) ([]Comment, error) {
+	q := commentSelectBase + ` WHERE c.corridor_id=?`
+	args := []interface{}{corridorID}
+	if status != "" {
+		q += ` AND c.status=?`
+		args = append(args, status)
+	}
+	q += ` ORDER BY c.created_at DESC`
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanComments(rows)
 }
 
 // commentsByTrainID returns a train's comments, optionally filtered by status,

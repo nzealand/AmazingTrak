@@ -9,17 +9,18 @@
   </nav>
   <div class="page-header">
     <h1>Route &amp; Schedule</h1>
-    <p class="subtitle">{{$d.Train.DisplayName}} — set arrival/departure times and which days the train runs.</p>
+    <p class="subtitle">Every station in the {{$d.Train.CorridorName}} corridor is listed below. Enter arrival/departure times for the stations this train actually stops at — leave a station blank if it doesn't stop there.</p>
   </div>
 
   {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+  {{if $d.Error}}<div class="flash" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5">{{$d.Error}}</div>{{end}}
 
   <div style="margin-bottom:1rem">
     <a href="/trains/{{$d.Train.Slug}}/edit" class="btn btn-secondary btn-sm">← Back to Edit Train</a>
   </div>
 
   {{if not $d.Stops}}
-  <p style="color:var(--muted);padding:2rem 0">No stops are configured for this train. Stops belong to the corridor — ask an admin to add stations to the corridor first.</p>
+  <p style="color:var(--muted);padding:2rem 0">This corridor has no stations yet. Ask an admin to add stations to the corridor before building a schedule.</p>
   {{else}}
   <form method="post" action="/trains/{{$d.Train.Slug}}/edit/stops">
     <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
@@ -42,22 +43,22 @@
               {{if .StationCode}}<span style="font-size:.75rem;color:var(--muted);margin-left:.3rem">{{.StationCode}}</span>{{end}}
             </td>
             <td style="padding:.45rem .6rem">
-              <input type="text" name="arr_{{.ID}}" value="{{.ScheduledArrival}}"
+              <input type="text" name="arr_{{.StopID}}" value="{{.ScheduledArrival}}"
                 placeholder="e.g. 9:40a"
                 style="width:7rem;padding:.3rem .45rem;font-size:.82rem;border:1px solid var(--border);border-radius:.25rem;background:var(--input-bg);color:var(--text)">
             </td>
             <td style="padding:.45rem .6rem">
-              <input type="text" name="dep_{{.ID}}" value="{{.ScheduledDeparture}}"
+              <input type="text" name="dep_{{.StopID}}" value="{{.ScheduledDeparture}}"
                 placeholder="e.g. 9:41a"
                 style="width:7rem;padding:.3rem .45rem;font-size:.82rem;border:1px solid var(--border);border-radius:.25rem;background:var(--input-bg);color:var(--text)">
             </td>
             <td style="padding:.45rem .6rem;text-align:center">
-              <input type="hidden" name="wkdy_{{.ID}}" value="0">
-              <input type="checkbox" name="wkdy_{{.ID}}" value="1" {{if .RunsWeekday}}checked{{end}}>
+              <input type="hidden" name="wkdy_{{.StopID}}" value="0">
+              <input type="checkbox" name="wkdy_{{.StopID}}" value="1" {{if .RunsWeekday}}checked{{end}}>
             </td>
             <td style="padding:.45rem .6rem;text-align:center">
-              <input type="hidden" name="wknd_{{.ID}}" value="0">
-              <input type="checkbox" name="wknd_{{.ID}}" value="1" {{if .RunsWeekend}}checked{{end}}>
+              <input type="hidden" name="wknd_{{.StopID}}" value="0">
+              <input type="checkbox" name="wknd_{{.StopID}}" value="1" {{if .RunsWeekend}}checked{{end}}>
             </td>
           </tr>
           {{end}}

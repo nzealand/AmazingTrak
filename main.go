@@ -157,10 +157,7 @@ type App struct {
 	adminPrefix     string
 	adminCookiePath string
 	uploadsDir      string
-	smtpHost        string
-	smtpPort        string
-	smtpUser        string
-	smtpPass        string
+	resendKey       string
 	baseURL         string
 	secureCookies   bool
 
@@ -564,13 +561,9 @@ func main() {
 	if adminPassword == "" {
 		adminPassword = "secret"
 	}
-	smtpHost := os.Getenv("SMTP_HOST")
-	smtpPort := os.Getenv("SMTP_PORT")
-	if smtpPort == "" {
-		smtpPort = "587"
-	}
-	smtpUser := os.Getenv("SMTP_USER")
-	smtpPass := os.Getenv("SMTP_PASS")
+	// Email is entirely optional: with no RESEND_API_KEY the site sends nothing
+	// and no email-dependent feature blocks a user.
+	resendKey := os.Getenv("RESEND_API_KEY")
 	baseURL := os.Getenv("BASE_URL")
 	if baseURL == "" {
 		baseURL = "http://localhost:" + port
@@ -625,10 +618,7 @@ func main() {
 		adminPrefix:     "/" + adminSecret,
 		adminCookiePath: "/" + firstSegment,
 		uploadsDir:      uploadsDir,
-		smtpHost:        smtpHost,
-		smtpPort:        smtpPort,
-		smtpUser:        smtpUser,
-		smtpPass:        smtpPass,
+		resendKey:       resendKey,
 		baseURL:         baseURL,
 		secureCookies:   secureCookies,
 		publicTemplates: pubTmpl,
@@ -680,6 +670,7 @@ func main() {
 	mux.HandleFunc("GET /trains/{slug}/suggest", app.handleSuggestForm)
 	mux.HandleFunc("POST /trains/{slug}/suggest", app.handleSuggestSubmit)
 	mux.HandleFunc("POST /trains/{slug}/comment", app.requireUser(app.handleCommentSubmit))
+	mux.HandleFunc("POST /corridors/{slug}/comment", app.requireUser(app.handleCorridorCommentSubmit))
 	mux.HandleFunc("GET /stations/{slug}", app.handleStation)
 
 	// Conductor self-service (managed through public pages; never the admin URL).
@@ -699,6 +690,7 @@ func main() {
 	mux.HandleFunc("POST /login", app.handleUserLoginPost)
 	mux.HandleFunc("POST /logout", app.handleUserLogout)
 	mux.HandleFunc("GET /confirm-email", app.handleConfirmEmail)
+	mux.HandleFunc("POST /resend-verification", app.requireUser(app.handleResendVerification))
 	mux.HandleFunc("GET /users/{username}", app.requireUser(app.handleUserProfile))
 
 	p := app.adminPrefix
@@ -792,11 +784,14 @@ func main() {
 	mux.HandleFunc("POST "+p+"/users/{id}/approve", ru(app.handleAdminUserApprove))
 	mux.HandleFunc("POST "+p+"/users/{id}/unapprove", ru(app.handleAdminUserUnapprove))
 	mux.HandleFunc("POST "+p+"/users/{id}/delete", ru(app.handleAdminUserDelete))
+	mux.HandleFunc("POST "+p+"/users/{id}/anonymize", ru(app.handleAdminUserAnonymize))
 	mux.HandleFunc("POST "+p+"/admins/{id}/delete", rca(app.handleAdminAdminDelete))
 
 	// Admin settings (permission level 5)
 	mux.HandleFunc("GET "+p+"/settings", app.requirePermission(5, app.handleAdminSettings))
 	mux.HandleFunc("POST "+p+"/settings", app.requirePermission(5, app.handleAdminSettingsPost))
+	mux.HandleFunc("GET "+p+"/email-errors", app.requirePermission(5, app.handleAdminEmailErrors))
+	mux.HandleFunc("POST "+p+"/email-errors/clear", app.requirePermission(5, app.handleAdminEmailErrorsClear))
 
 	handler := app.limitBody(app.securityHeaders(mux))
 	srv := &http.Server{

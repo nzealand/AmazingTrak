@@ -7,6 +7,16 @@
   <h1 style="font-size:1.6rem;font-weight:700;margin-bottom:.25rem">{{$d.ProfileUser.Username}}</h1>
   <p style="color:var(--muted);margin-bottom:1rem">Joined {{$d.ProfileUser.CreatedAt}} · {{$d.ProfileUser.StatusLabel}}</p>
 
+  {{if and $d.EmailEnabled .CurrentUser (eq .CurrentUser.Username $d.ProfileUser.Username) (not $d.ProfileUser.EmailConfirmed) $d.ProfileUser.Email}}
+  <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:1.25rem;padding:.7rem .9rem;background:var(--input-bg);border:1px solid var(--border);border-radius:.5rem;font-size:.9rem">
+    <span>✉️ Your email address isn't verified yet. Verifying lets you request the Conductor role.</span>
+    <form method="post" action="/resend-verification" style="display:contents">
+      <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
+      <button class="btn btn-secondary btn-sm" type="submit">Resend verification email</button>
+    </form>
+  </div>
+  {{end}}
+
   {{if $d.Badges}}
   <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem">
     {{range $d.Badges}}

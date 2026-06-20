@@ -1,0 +1,31 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+
+<p style="color:var(--muted);margin-bottom:1rem">
+  {{if $d.EmailEnabled}}Email is <strong>enabled</strong>.{{else}}Email is <strong>off</strong> (set RESEND_API_KEY and enable it in Settings).{{end}}
+  Failed sends are logged here.
+</p>
+
+{{if $d.Errors}}
+<form method="post" action="{{.AdminPrefix}}/email-errors/clear" style="margin-bottom:1rem" onsubmit="return confirm('Clear the entire email error log?')">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <button class="btn btn-sm btn-danger" type="submit">Clear log</button>
+</form>
+
+<table class="admin-table">
+  <thead><tr><th>When</th><th>To</th><th>Subject</th><th>Error</th></tr></thead>
+  <tbody>
+    {{range $d.Errors}}
+    <tr>
+      <td style="font-size:.8rem;color:var(--muted);white-space:nowrap">{{.CreatedAt}}</td>
+      <td style="font-size:.85rem">{{.To}}</td>
+      <td style="font-size:.85rem">{{.Subject}}</td>
+      <td style="font-size:.8rem;color:#b91c1c;max-width:420px;word-break:break-word">{{.Error}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p style="color:var(--muted)">No email errors logged.</p>
+{{end}}
+{{end}}

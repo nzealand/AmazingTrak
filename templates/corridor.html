@@ -44,16 +44,19 @@
   <p style="font-size:1rem;color:var(--muted);max-width:720px;margin-bottom:1.5rem">{{$d.Corridor.Description}}</p>
   {{end}}
 
-  <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:1.5rem;font-size:.9rem">
+  {{/* Conductor status, on-time performance, and schedule all share one line. */}}
+  <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;font-size:.9rem">
     {{if $d.Corridor.ConductorUsername}}
       <span style="color:var(--muted)">🧑‍✈️ Maintained by <a href="/users/{{$d.Corridor.ConductorUsername}}">{{$d.Corridor.ConductorUsername}}</a></span>
     {{else if $d.CanManage}}
     {{else if $d.CanRequest}}
-      <form method="post" action="/corridors/{{$d.Corridor.Slug}}/conductor/request" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+      <form method="post" action="/corridors/{{$d.Corridor.Slug}}/conductor/request" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0">
         <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
-        <input class="form-input" type="text" name="message" maxlength="500" placeholder="Why you'd like to maintain this corridor (optional)" style="width:min(22rem,70vw);padding:.35rem .55rem;font-size:.85rem">
+        <input class="form-input" type="text" name="message" maxlength="500" placeholder="Why you'd like to maintain this corridor (optional)" style="width:min(22rem,55vw);padding:.35rem .55rem;font-size:.85rem">
         <button class="btn btn-secondary btn-sm" type="submit">Request to be Conductor</button>
       </form>
+    {{else if $d.NeedsVerify}}
+      <span style="color:var(--muted)">Verify your email to request the Conductor role — see your <a href="/users/{{.CurrentUser.Username}}">profile</a>.</span>
     {{else if $d.HasRequested}}
       <span style="color:var(--muted)">Your request to maintain this corridor is pending review.</span>
     {{else if not .CurrentUser}}
@@ -64,25 +67,15 @@
       <span style="color:var(--muted)">🧑‍✈️ You maintain this corridor.</span>
       <a href="/corridors/{{$d.Corridor.Slug}}/trains/new" class="btn btn-secondary btn-sm">+ Add Train</a>
     {{end}}
-  </div>
 
-  {{if $d.Corridor.OnTimePercent.Valid}}
-  <div style="margin-bottom:1.25rem">
-    <span style="font-size:.85rem;color:var(--muted)">On-time performance:</span>
-    <strong style="margin-left:.5rem">{{fmtFloatN $d.Corridor.OnTimePercent}}%</strong>
-  </div>
-  {{end}}
+    {{if $d.Corridor.OnTimePercent.Valid}}
+      <span style="color:var(--muted)">On-time performance: <strong style="color:var(--text)">{{fmtFloatN $d.Corridor.OnTimePercent}}%</strong></span>
+    {{end}}
 
-  {{if $d.Corridor.ScheduleURL}}
-  <div style="margin-bottom:1.5rem">
-    <dl class="train-meta" style="margin:0">
-      <div>
-        <dt>Schedule</dt>
-        <dd><a href="{{$d.Corridor.ScheduleURL | safeURL}}" target="_blank" rel="noopener">Amtrak schedule →</a></dd>
-      </div>
-    </dl>
+    {{if $d.Corridor.ScheduleURL}}
+      <span style="color:var(--muted)">Schedule <a href="{{$d.Corridor.ScheduleURL | safeURL}}" target="_blank" rel="noopener">Amtrak schedule →</a></span>
+    {{end}}
   </div>
-  {{end}}
 
   <div class="corridor-split">
     <div class="corridor-trains">
@@ -147,5 +140,58 @@
     {{end}}
   </ul>
   {{end}}
+
+  <section id="comments" style="margin-top:2.5rem">
+    <h2 class="section-heading">Comments</h2>
+    {{if $d.Comments}}
+    <ul style="list-style:none;padding:0;margin:0 0 1.5rem;display:flex;flex-direction:column;gap:1rem">
+      {{range $d.Comments}}
+      <li style="border:1px solid var(--border);border-radius:6px;padding:.85rem 1rem">
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:.35rem">
+          <a href="/users/{{.Username}}" style="font-weight:600">{{.Username}}</a>
+          <span style="margin:0 .35rem">·</span>{{.CreatedAt}}
+        </div>
+        <div style="white-space:pre-wrap;word-break:break-word">{{.Body}}</div>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p style="color:var(--muted);margin-bottom:1.5rem">No comments yet. Be the first to share your thoughts.</p>
+    {{end}}
+
+    {{if $d.OwnPendingComments}}
+    <ul style="list-style:none;padding:0;margin:0 0 1.5rem;display:flex;flex-direction:column;gap:1rem">
+      {{range $d.OwnPendingComments}}
+      <li style="border:1px dashed var(--border);border-radius:6px;padding:.85rem 1rem;opacity:.6">
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:.35rem">
+          <span style="font-weight:600">{{.Username}}</span>
+          <span style="margin:0 .35rem">·</span>{{.CreatedAt}}
+          <span style="margin-left:.5rem;font-size:.75rem;background:var(--border);border-radius:4px;padding:.1rem .4rem">awaiting review</span>
+        </div>
+        <div style="white-space:pre-wrap;word-break:break-word">{{.Body}}</div>
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+
+    {{if .CurrentUser}}
+    <form method="post" action="/corridors/{{$d.Corridor.Slug}}/comment" class="admin-form" style="max-width:640px">
+      <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
+      <input type="text" name="website" value="" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
+      <input type="text" name="a" value="" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
+      <input type="hidden" name="b" value="ok">
+      <div class="form-group">
+        <label class="form-label" for="comment-body">Add a comment</label>
+        <textarea class="form-textarea" id="comment-body" name="body" rows="3" maxlength="2000" required placeholder="Share what you know about this corridor…"></textarea>
+        <div class="form-hint">Plain text only. Comments are reviewed by an admin before they appear.</div>
+      </div>
+      <button class="btn btn-primary" type="submit">Post comment</button>
+    </form>
+    {{else}}
+    <p style="color:var(--muted)">
+      <a href="/login">Log in</a> or <a href="/register">register</a> to leave a comment.
+    </p>
+    {{end}}
+  </section>
 </div>
 {{end}}

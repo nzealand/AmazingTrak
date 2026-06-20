@@ -73,6 +73,19 @@ func runMigrations(db *sql.DB) error {
 	db.Exec(`ALTER TABLE media ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`)
 	// Corridor conductor: a registered user assigned to maintain the corridor's trains.
 	db.Exec(`ALTER TABLE corridors ADD COLUMN conductor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`)
+	// Email (Resend) settings — all optional; email is off unless enabled.
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''`)
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN email_enabled INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN verify_expiry_hours INTEGER NOT NULL DEFAULT 24`)
+	// Trusted-tier (approved/auto_approved users) rate limits; anon limits stay in the existing columns.
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN trusted_rate_per_hour INTEGER NOT NULL DEFAULT 30`)
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN trusted_rate_per_day INTEGER NOT NULL DEFAULT 100`)
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN trusted_comment_rate_per_hour INTEGER NOT NULL DEFAULT 30`)
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN trusted_comment_rate_per_day INTEGER NOT NULL DEFAULT 100`)
+	// Highest pending-items threshold (1/10/100) the admin has already been emailed about (hysteresis state).
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN pending_notify_level INTEGER NOT NULL DEFAULT 0`)
+	// When the current email-verification token was last sent (for expiry).
+	db.Exec(`ALTER TABLE users ADD COLUMN confirm_sent_at TEXT`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_suggestions_user ON suggestions(user_id)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_media_train_type ON media(train_id, media_type)`)
@@ -86,14 +99,65 @@ func runMigrations(db *sql.DB) error {
 
 	// ── Versioned migrations (non-idempotent) ──────────────────────────────
 	// Add new migrations below using the next integer. Each runs exactly once
-	// and is recorded in schema_migrations. Example for future use:
-	//
-	//   if !migrationApplied(db, 1) {
-	//       if _, err := db.Exec(`...`); err != nil { return err }
-	//       markMigration(db, 1)
-	//   }
+	// and is recorded in schema_migrations.
+
+	// Migration 1: generalize comments to reference a train OR a corridor.
+	// SQLite can't drop the NOT NULL on train_id in place, so rebuild the table
+	// (make train_id nullable, add corridor_id + CHECK) and copy existing rows.
+	if !migrationApplied(db, 1) {
+		if err := migrateCommentsTrainOrCorridor(db); err != nil {
+			return err
+		}
+		markMigration(db, 1)
+	}
 
 	return nil
+}
+
+// migrateCommentsTrainOrCorridor rebuilds the comments table so a comment can
+// belong to a train or a corridor (mirrors the media table's pattern).
+func migrateCommentsTrainOrCorridor(db *sql.DB) error {
+	// Skip if already generalized (e.g. fresh DB created by applySchema).
+	var hasCorridor int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('comments') WHERE name='corridor_id'`).Scan(&hasCorridor)
+	if hasCorridor > 0 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmts := []string{
+		`CREATE TABLE comments_new (
+			id INTEGER PRIMARY KEY,
+			train_id INTEGER REFERENCES trains(id) ON DELETE CASCADE,
+			corridor_id INTEGER REFERENCES corridors(id) ON DELETE CASCADE,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			body TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+			submitter_ip_hash TEXT,
+			rejection_reason TEXT,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			reviewed_at TEXT,
+			reviewed_by INTEGER REFERENCES admin_users(id),
+			CHECK (train_id IS NOT NULL OR corridor_id IS NOT NULL)
+		)`,
+		`INSERT INTO comments_new (id, train_id, corridor_id, user_id, body, status, submitter_ip_hash, rejection_reason, created_at, reviewed_at, reviewed_by)
+			SELECT id, train_id, NULL, user_id, body, status, submitter_ip_hash, rejection_reason, created_at, reviewed_at, reviewed_by FROM comments`,
+		`DROP TABLE comments`,
+		`ALTER TABLE comments_new RENAME TO comments`,
+		`CREATE INDEX IF NOT EXISTS idx_comments_train_status ON comments(train_id, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_comments_corridor_status ON comments(corridor_id, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_comments_status ON comments(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_comments_user ON comments(user_id)`,
+	}
+	for _, s := range stmts {
+		if _, err := tx.Exec(s); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func migrateStopSlugs(db *sql.DB) error {
@@ -238,7 +302,8 @@ CREATE TABLE IF NOT EXISTS suggestions (
 
 CREATE TABLE IF NOT EXISTS comments (
 	id INTEGER PRIMARY KEY,
-	train_id INTEGER NOT NULL REFERENCES trains(id) ON DELETE CASCADE,
+	train_id INTEGER REFERENCES trains(id) ON DELETE CASCADE,
+	corridor_id INTEGER REFERENCES corridors(id) ON DELETE CASCADE,
 	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	body TEXT NOT NULL,
 	status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
@@ -246,7 +311,22 @@ CREATE TABLE IF NOT EXISTS comments (
 	rejection_reason TEXT,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	reviewed_at TEXT,
-	reviewed_by INTEGER REFERENCES admin_users(id)
+	reviewed_by INTEGER REFERENCES admin_users(id),
+	CHECK (train_id IS NOT NULL OR corridor_id IS NOT NULL)
+);
+
+CREATE TABLE IF NOT EXISTS email_errors (
+	id INTEGER PRIMARY KEY,
+	to_addr TEXT NOT NULL,
+	subject TEXT NOT NULL,
+	error TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS email_verifications (
+	id INTEGER PRIMARY KEY,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS conductor_requests (
@@ -345,6 +425,7 @@ CREATE INDEX IF NOT EXISTS idx_comments_train_status ON comments(train_id, statu
 CREATE INDEX IF NOT EXISTS idx_comments_status ON comments(status);
 CREATE INDEX IF NOT EXISTS idx_comments_user ON comments(user_id);
 CREATE INDEX IF NOT EXISTS idx_conductor_req_status ON conductor_requests(status);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_user_time ON email_verifications(user_id, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_conductor_req_pending ON conductor_requests(corridor_id, user_id) WHERE status='pending';
 
 CREATE TRIGGER IF NOT EXISTS corridors_updated_at AFTER UPDATE ON corridors BEGIN

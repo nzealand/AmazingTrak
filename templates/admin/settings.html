@@ -134,6 +134,15 @@
         <label class="form-label">Max submissions per day</label>
         <input class="form-input" type="number" name="rate_per_day" value="{{$d.Prefs.RatePerDay}}" min="1" max="500" required style="max-width:120px">
       </div>
+      <p style="font-size:.8rem;color:var(--muted);margin:.5rem 0">Trusted tier — applies to approved/auto-approved users (conductors are unlimited).</p>
+      <div class="form-group">
+        <label class="form-label">Trusted: max submissions per hour</label>
+        <input class="form-input" type="number" name="trusted_rate_per_hour" value="{{$d.Prefs.TrustedRatePerHour}}" min="1" max="1000" required style="max-width:120px">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Trusted: max submissions per day</label>
+        <input class="form-input" type="number" name="trusted_rate_per_day" value="{{$d.Prefs.TrustedRatePerDay}}" min="1" max="5000" required style="max-width:120px">
+      </div>
       <button class="btn btn-primary" type="submit">Save Rate Limits</button>
     </form>
   </section>
@@ -141,7 +150,7 @@
   <section>
     <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Registration Rate Limits</h3>
     <p style="font-size:.875rem;color:var(--muted);margin-bottom:1rem">
-      Controls how many new accounts can be registered from a single network.
+      Controls how many new accounts can be registered across the entire site within the configured time window.
     </p>
     <form method="post" action="{{.AdminPrefix}}/settings" class="admin-form">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -161,7 +170,7 @@
   <section>
     <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Comment Rate Limits</h3>
     <p style="font-size:.875rem;color:var(--muted);margin-bottom:1rem">
-      Controls how many comments a single network can post (logged-in users only; approved contributors are exempt).
+      Per-user comment limits (logged-in users only). Conductors are unlimited; approved/auto-approved users get the trusted tier.
     </p>
     <form method="post" action="{{.AdminPrefix}}/settings" class="admin-form">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -174,26 +183,54 @@
         <label class="form-label">Max comments per day</label>
         <input class="form-input" type="number" name="comment_rate_per_day" value="{{$d.Prefs.CommentRatePerDay}}" min="1" max="1000" required style="max-width:120px">
       </div>
+      <p style="font-size:.8rem;color:var(--muted);margin:.5rem 0">Trusted tier — approved/auto-approved users.</p>
+      <div class="form-group">
+        <label class="form-label">Trusted: max comments per hour</label>
+        <input class="form-input" type="number" name="trusted_comment_rate_per_hour" value="{{$d.Prefs.TrustedCommentRatePerHour}}" min="1" max="500" required style="max-width:120px">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Trusted: max comments per day</label>
+        <input class="form-input" type="number" name="trusted_comment_rate_per_day" value="{{$d.Prefs.TrustedCommentRatePerDay}}" min="1" max="2000" required style="max-width:120px">
+      </div>
       <button class="btn btn-primary" type="submit">Save Comment Limits</button>
     </form>
   </section>
 
   <section>
-    <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Email Notifications</h3>
+    <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Email (Resend)</h3>
     <p style="font-size:.875rem;color:var(--muted);margin-bottom:1rem">
-      Enter an email address to receive a notification whenever someone submits a photo or video for review.
-      Requires SMTP to be configured via environment variables (<code>SMTP_HOST</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code>).
+      Email is optional. It powers address verification and admin notifications via
+      <a href="https://resend.com" target="_blank" rel="noopener">Resend</a>.
+      {{if $d.HasResendKey}}<span style="color:#16a34a">API key detected.</span>{{else}}<strong style="color:#b91c1c">No API key:</strong> set the <code>RESEND_API_KEY</code> environment variable to enable email.{{end}}
     </p>
     <form method="post" action="{{.AdminPrefix}}/settings" class="admin-form">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-      <input type="hidden" name="action" value="notifications">
+      <input type="hidden" name="action" value="email">
       <div class="form-group">
-        <label class="form-label">Notification Email</label>
-        <input class="form-input" type="email" name="notification_email" value="{{$d.Prefs.NotificationEmail}}" placeholder="you@example.com">
-        <div class="form-hint">Leave blank to disable notifications.</div>
+        <label class="form-label">
+          <input type="hidden" name="email_enabled" value="0">
+          <input type="checkbox" name="email_enabled" value="1" {{if $d.Prefs.EmailEnabled}}checked{{end}} {{if not $d.HasResendKey}}disabled{{end}}>
+          Enable email
+        </label>
+        <div class="form-hint">{{if not $d.HasResendKey}}Disabled until RESEND_API_KEY is set.{{else}}Turn all outbound email on or off.{{end}}</div>
       </div>
-      <button class="btn btn-primary" type="submit">Save Notification Settings</button>
+      <div class="form-group">
+        <label class="form-label">Sender email (From)</label>
+        <input class="form-input" type="email" name="sender_email" value="{{$d.Prefs.SenderEmail}}" placeholder="noreply@yourdomain.com">
+        <div class="form-hint">Must be a verified Resend sender. Required to enable email.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Admin notification email</label>
+        <input class="form-input" type="email" name="notification_email" value="{{$d.Prefs.NotificationEmail}}" placeholder="you@example.com">
+        <div class="form-hint">Receives submission/threshold notifications. Leave blank to disable notifications.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Verification link expiry (hours)</label>
+        <input class="form-input" type="number" name="verify_expiry_hours" value="{{$d.Prefs.VerifyExpiryHours}}" min="1" max="168" required style="max-width:120px">
+      </div>
+      <button class="btn btn-primary" type="submit">Save Email Settings</button>
     </form>
+    <p style="font-size:.8rem;color:var(--muted);margin-top:.75rem">Delivery problems are logged on the <a href="{{.AdminPrefix}}/email-errors">Email Errors</a> page.</p>
   </section>
 
 </div>

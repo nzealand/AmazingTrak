@@ -349,3 +349,50 @@ func (app *App) handleAdminUserSubmissions(w http.ResponseWriter, r *http.Reques
 		Data:      subsData{User: &u, Submissions: subs},
 	})
 }
+
+func (app *App) handleAdminUserAnonymize(w http.ResponseWriter, r *http.Request) {
+	s := sessionFromCtx(r)
+	if !app.checkCSRF(r) {
+		http.Error(w, "Invalid CSRF token", 403)
+		return
+	}
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	u, err := userByID(app.db, id)
+	if err != nil {
+		setFlash(w, "User not found.")
+		http.Redirect(w, r, app.adminPrefix+"/users", http.StatusSeeOther)
+		return
+	}
+	if u.IsApproved() {
+		setFlash(w, "Cannot anonymize an approved user.")
+		http.Redirect(w, r, app.adminPrefix+"/users", http.StatusSeeOther)
+		return
+	}
+
+	// Pick the next anonymous[N] ID — find max existing.
+	var maxN int
+	app.db.QueryRow(`SELECT COALESCE(MAX(CAST(SUBSTR(username,10) AS INTEGER)),0) FROM users WHERE username LIKE 'anonymous%'`).Scan(&maxN)
+	newUsername := fmt.Sprintf("anonymous%d", maxN+1)
+
+	tx, err := app.db.Begin()
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`UPDATE users SET username=?, email='', status='pending', confirm_token=NULL, email_confirmed=0 WHERE id=?`, newUsername, id); err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	if _, err = tx.Exec(`UPDATE comments SET status='rejected', rejection_reason='anonymized' WHERE user_id=? AND status != 'rejected'`, id); err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	app.logAudit(s.AdminUserID, "anonymize", "user", id, u.Username+" → "+newUsername)
+	setFlash(w, "User anonymized as "+newUsername+".")
+	http.Redirect(w, r, app.adminPrefix+"/users", http.StatusSeeOther)
+}

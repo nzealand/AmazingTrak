@@ -74,25 +74,33 @@ func (app *App) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	s := sessionFromCtx(r)
-	var pending, trains, corridors, mediaCount, pendingComments int
+	// Recompute the pending-notify level so thresholds re-arm as the admin clears
+	// the queue (downward crossings reset the stored level).
+	app.maybeNotifyPending()
+
+	var pending, trains, corridors, mediaCount, pendingComments, pendingRegistrations, pendingConductorReqs int
 	app.db.QueryRow(`SELECT COUNT(*) FROM suggestions WHERE status='pending'`).Scan(&pending)
 	app.db.QueryRow(`SELECT COUNT(*) FROM trains`).Scan(&trains)
 	app.db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridors)
 	app.db.QueryRow(`SELECT COUNT(*) FROM media`).Scan(&mediaCount)
 	app.db.QueryRow(`SELECT COUNT(*) FROM comments WHERE status='pending'`).Scan(&pendingComments)
+	app.db.QueryRow(`SELECT COUNT(*) FROM users WHERE status IN ('pending','confirmed')`).Scan(&pendingRegistrations)
+	app.db.QueryRow(`SELECT COUNT(*) FROM conductor_requests WHERE status='pending'`).Scan(&pendingConductorReqs)
 
 	type dashData struct {
-		PendingCount        int
-		TrainCount          int
-		CorridorCount       int
-		MediaCount          int
-		PendingCommentCount int
+		PendingCount             int
+		TrainCount               int
+		CorridorCount            int
+		MediaCount               int
+		PendingCommentCount      int
+		PendingRegistrationCount int
+		PendingConductorCount    int
 	}
 	app.renderAdmin(w, r, "dashboard.html", adminPage{
 		Title:     "Dashboard",
 		Flash:     getFlash(w, r),
 		CSRFToken: s.CSRFToken,
-		Data:      dashData{pending, trains, corridors, mediaCount, pendingComments},
+		Data:      dashData{pending, trains, corridors, mediaCount, pendingComments, pendingRegistrations, pendingConductorReqs},
 	})
 }
 
@@ -1819,14 +1827,15 @@ func (app *App) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type settingsData struct {
-		User  AdminUser
-		Prefs SitePreferences
+		User         AdminUser
+		Prefs        SitePreferences
+		HasResendKey bool
 	}
 	app.renderAdmin(w, r, "settings.html", adminPage{
 		Title:     "Settings",
 		Flash:     getFlash(w, r),
 		CSRFToken: s.CSRFToken,
-		Data:      settingsData{User: user, Prefs: prefs},
+		Data:      settingsData{User: user, Prefs: prefs, HasResendKey: app.resendKey != ""},
 	})
 }
 
@@ -1942,30 +1951,44 @@ func (app *App) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) 
 		app.logAudit(s.AdminUserID, "update_credentials", "admin_user", s.AdminUserID, "")
 		setFlash(w, "Credentials updated. Please log in again if you changed your password.")
 
-	case "notifications":
-		email := strings.TrimSpace(r.FormValue("notification_email"))
-		_, err := app.db.Exec(`UPDATE site_preferences SET notification_email=? WHERE id=1`, email)
-		if err != nil {
-			setFlash(w, "Error saving notification email: "+err.Error())
+	case "email":
+		notifyEmail := strings.TrimSpace(r.FormValue("notification_email"))
+		senderEmail := strings.TrimSpace(r.FormValue("sender_email"))
+		emailEnabled := lastFormValue(r, "email_enabled") == "1"
+		expiryHours, eerr := strconv.Atoi(r.FormValue("verify_expiry_hours"))
+		if eerr != nil || expiryHours < 1 {
+			expiryHours = 24
+		}
+		// Email can only be enabled when an API key and sender address are present.
+		if emailEnabled && (app.resendKey == "" || senderEmail == "") {
+			setFlash(w, "To enable email, set RESEND_API_KEY and a sender email address.")
 			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
 			return
 		}
-		if email != "" {
-			setFlash(w, "Notification email saved. You'll be emailed when new submissions arrive.")
-		} else {
-			setFlash(w, "Notification email cleared.")
+		_, err := app.db.Exec(
+			`UPDATE site_preferences SET notification_email=?, sender_email=?, email_enabled=?, verify_expiry_hours=? WHERE id=1`,
+			notifyEmail, senderEmail, boolToInt(emailEnabled), expiryHours,
+		)
+		if err != nil {
+			setFlash(w, "Error saving email settings: "+err.Error())
+			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
+			return
 		}
+		app.logAudit(s.AdminUserID, "update_email_settings", "site_preferences", 1, "")
+		setFlash(w, "Email settings saved.")
 
 	case "rate_limits":
 		perMin, err1 := strconv.Atoi(r.FormValue("rate_per_minute"))
 		perHour, err2 := strconv.Atoi(r.FormValue("rate_per_hour"))
 		perDay, err3 := strconv.Atoi(r.FormValue("rate_per_day"))
-		if err1 != nil || err2 != nil || err3 != nil || perMin < 1 || perHour < 1 || perDay < 1 {
+		tHour, err4 := strconv.Atoi(r.FormValue("trusted_rate_per_hour"))
+		tDay, err5 := strconv.Atoi(r.FormValue("trusted_rate_per_day"))
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil || perMin < 1 || perHour < 1 || perDay < 1 || tHour < 1 || tDay < 1 {
 			setFlash(w, "Rate limits must be positive integers.")
 			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
 			return
 		}
-		_, err := app.db.Exec(`UPDATE site_preferences SET rate_per_minute=?, rate_per_hour=?, rate_per_day=? WHERE id=1`, perMin, perHour, perDay)
+		_, err := app.db.Exec(`UPDATE site_preferences SET rate_per_minute=?, rate_per_hour=?, rate_per_day=?, trusted_rate_per_hour=?, trusted_rate_per_day=? WHERE id=1`, perMin, perHour, perDay, tHour, tDay)
 		if err != nil {
 			setFlash(w, "Error saving rate limits: "+err.Error())
 			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
@@ -1994,12 +2017,14 @@ func (app *App) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) 
 	case "comment_rate_limits":
 		perHour, err1 := strconv.Atoi(r.FormValue("comment_rate_per_hour"))
 		perDay, err2 := strconv.Atoi(r.FormValue("comment_rate_per_day"))
-		if err1 != nil || err2 != nil || perHour < 1 || perDay < 1 {
+		tHour, err3 := strconv.Atoi(r.FormValue("trusted_comment_rate_per_hour"))
+		tDay, err4 := strconv.Atoi(r.FormValue("trusted_comment_rate_per_day"))
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil || perHour < 1 || perDay < 1 || tHour < 1 || tDay < 1 {
 			setFlash(w, "Comment rate limits must be positive integers.")
 			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
 			return
 		}
-		_, err := app.db.Exec(`UPDATE site_preferences SET comment_rate_per_hour=?, comment_rate_per_day=? WHERE id=1`, perHour, perDay)
+		_, err := app.db.Exec(`UPDATE site_preferences SET comment_rate_per_hour=?, comment_rate_per_day=?, trusted_comment_rate_per_hour=?, trusted_comment_rate_per_day=? WHERE id=1`, perHour, perDay, tHour, tDay)
 		if err != nil {
 			setFlash(w, "Error saving comment rate limits: "+err.Error())
 			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)

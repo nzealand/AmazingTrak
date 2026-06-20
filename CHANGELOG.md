@@ -2,6 +2,36 @@
 
 All notable changes to AmazingTrak are documented here.
 
+===3.12.0=====
+
+### Email (optional, via Resend)
+- **Optional email backend**: outbound email now goes through the Resend HTTP API, gated by a `RESEND_API_KEY` env var plus an admin enable flag and sender address. With no key/flag the site behaves exactly as before — nothing is sent and no email-dependent feature blocks a user. SMTP settings retired.
+- **Email verification**: verification links now expire after a configurable window (default 24h); users can request a fresh link (rate limited 3/day per user, 50/day site-wide) from their profile. Verification emails link back to the site.
+- **Conductor gate**: when email is enabled, only verified addresses may request the Conductor role (skipped entirely when email is off).
+- **Admin email settings**: store only sender email, admin notification email, an enable/disable flag, and the verification expiry. Email send failures are logged and viewable on a new **Email Errors** admin page.
+- **Threshold notifications**: the admin is emailed when the number of pending review items (suggestions + comments + registrations + conductor requests) crosses 1, 10, or 100 — once per threshold, re-arming only after the count drops back below it.
+
+### Rate limits
+- **Wait-time messages**: rate-limit messages now tell the user exactly how long to wait, for suggestions, registrations, and comments.
+- **Tiers**: separate limits for standard (anonymous/unapproved) vs trusted (approved/auto-approved) users; **conductors are unlimited** for both suggestions and comments.
+- **Registration limit is site-wide** (counts all new accounts in the window, not per-IP).
+- **First submission free**: a newly registered user may submit one suggestion immediately without waiting out the per-minute throttle.
+
+### Corridors
+- **Corridor comments**: registered users can view and post comments on corridors (moderated like train comments); the comments table now supports train or corridor targets.
+- **One-line header**: the conductor status, on-time performance, and schedule link now share a single line on the corridor page.
+
+### Conductor schedule editor
+- The schedule editor now lists **every station in the corridor** as a possible stop. Enter arrival/departure times for the stations the train actually stops at; leave a station blank and the train skips it. At least one arrival and one departure time are required.
+
+### Admin
+- **Delete warning**: deleting a user now warns how many videos and comments will also be removed.
+- **Submitter shown**: the suggestions review page shows who submitted each item, linked to their profile.
+- **Dashboard counts**: pending registrations and conductor requests now appear alongside pending suggestions and comments.
+
+### Database (upgrade-safe)
+- New nullable `site_preferences` columns (email + trusted-tier limits + notify state), `users.confirm_sent_at`, and `email_errors` / `email_verifications` tables. One guarded versioned migration rebuilds the `comments` table to allow corridor comments. Applies automatically on startup.
+
 ===3.11.0=====
 
 ### Conductors (corridor maintainers)

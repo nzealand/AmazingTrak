@@ -21,11 +21,11 @@
 </div>
 {{if $d.Comments}}
 <table class="admin-table">
-  <thead><tr><th>Train</th><th>User</th><th>Comment</th><th>Status</th><th>Submitted</th><th style="width:18%">Actions</th></tr></thead>
+  <thead><tr><th>On</th><th>User</th><th>Comment</th><th>Status</th><th>Submitted</th><th style="width:18%">Actions</th></tr></thead>
   <tbody>
     {{range $d.Comments}}
     <tr>
-      <td><a href="/trains/{{.TrainSlug}}#comments" target="_blank">{{.TrainName}}</a></td>
+      <td><a href="{{.TargetURL}}#comments" target="_blank">{{.TargetName}}</a>{{if .IsCorridor}} <span style="font-size:.7rem;color:var(--muted)">(corridor)</span>{{end}}</td>
       <td><a href="/users/{{.Username}}" target="_blank">{{.Username}}</a></td>
       <td style="max-width:340px;font-size:.85rem;white-space:pre-wrap;word-break:break-word">{{.Body}}</td>
       <td><span class="status-badge status-{{.Status}}">{{.Status}}</span></td>

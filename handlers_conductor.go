@@ -63,6 +63,13 @@ func (app *App) handleConductorRequest(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, corridorURL, http.StatusSeeOther)
 		return
 	}
+	// When email is enabled, only verified addresses may request the role. When
+	// email is off, verification is impossible so this gate is skipped.
+	if app.emailEnabled() && !user.EmailConfirmed {
+		setFlash(w, "Please verify your email address before requesting the Conductor role.")
+		http.Redirect(w, r, corridorURL, http.StatusSeeOther)
+		return
+	}
 	if corridor.ConductorUserID.Valid {
 		setFlash(w, "This corridor already has a Conductor.")
 		http.Redirect(w, r, corridorURL, http.StatusSeeOther)
@@ -87,6 +94,7 @@ func (app *App) handleConductorRequest(w http.ResponseWriter, r *http.Request) {
 	if prefs, err := getSitePrefs(app.db); err == nil && prefs.NotificationEmail != "" {
 		go app.sendConductorRequestEmail(prefs.NotificationEmail, corridor, *user, app.baseURL)
 	}
+	app.maybeNotifyPending()
 
 	setFlash(w, "Thanks! Your request to maintain this corridor has been submitted for review.")
 	http.Redirect(w, r, corridorURL, http.StatusSeeOther)
@@ -299,30 +307,44 @@ func (app *App) handleConductorTrainCreate(w http.ResponseWriter, r *http.Reques
 	http.Redirect(w, r, "/trains/"+newTrain.Slug+"/edit", http.StatusSeeOther)
 }
 
-// handleConductorStopsForm renders the route & schedule editor for a train.
+// scheduleStopsData backs the schedule editor template.
+type scheduleStopsData struct {
+	Train     Train
+	Stops     []ScheduleStop
+	CSRFToken string
+	Error     string
+}
+
+// renderStopsForm renders the schedule editor, optionally with an error and a
+// caller-supplied set of rows (used to preserve input on a validation failure).
+func (app *App) renderStopsForm(w http.ResponseWriter, r *http.Request, train Train, csrf string, stops []ScheduleStop, errMsg string) {
+	app.renderPublic(w, r, "train_edit_stops.html", publicPage{
+		Title: "Schedule — " + train.DisplayName,
+		Flash: getFlash(w, r),
+		Data:  scheduleStopsData{Train: train, Stops: stops, CSRFToken: csrf, Error: errMsg},
+	})
+}
+
+// handleConductorStopsForm renders the route & schedule editor. It lists every
+// station in the train's corridor; the conductor fills in times for the ones the
+// train actually stops at.
 func (app *App) handleConductorStopsForm(w http.ResponseWriter, r *http.Request) {
 	train, _, csrf, ok := app.conductorTrain(w, r)
 	if !ok {
 		return
 	}
-	stops, err := stopsByTrainID(app.db, train.ID)
+	stops, err := corridorStopsWithTrainTimes(app.db, train.ID, train.CorridorID)
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}
-	type stopsData struct {
-		Train     Train
-		Stops     []TrainStop
-		CSRFToken string
-	}
-	app.renderPublic(w, r, "train_edit_stops.html", publicPage{
-		Title: "Schedule — " + train.DisplayName,
-		Flash: getFlash(w, r),
-		Data:  stopsData{Train: train, Stops: stops, CSRFToken: csrf},
-	})
+	app.renderStopsForm(w, r, train, csrf, stops, "")
 }
 
-// handleConductorStopsUpdate saves schedule times for a train's stops.
+// handleConductorStopsUpdate saves the schedule. Corridor stations define the
+// possible stops; entering an arrival or departure time marks a station as an
+// actual stop (upserting a train_stops row); leaving both blank removes the stop.
+// At least one arrival and one departure time are required overall.
 func (app *App) handleConductorStopsUpdate(w http.ResponseWriter, r *http.Request) {
 	train, _, csrf, ok := app.conductorTrain(w, r)
 	if !ok {
@@ -336,32 +358,63 @@ func (app *App) handleConductorStopsUpdate(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "Invalid CSRF token", 403)
 		return
 	}
-	stops, err := stopsByTrainID(app.db, train.ID)
+	stops, err := corridorStopsWithTrainTimes(app.db, train.ID, train.CorridorID)
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
 	}
-	for _, ts := range stops {
-		sid := fmt.Sprintf("%d", ts.ID)
-		arr := strings.TrimSpace(r.FormValue("arr_" + sid))
-		dep := strings.TrimSpace(r.FormValue("dep_" + sid))
-		// Each checkbox is paired with a hidden "0" field that precedes it, so a
-		// checked box submits ["0","1"]. Read the last value to honor the checkbox.
-		wkdy := lastFormValue(r, "wkdy_"+sid) == "1"
-		wknd := lastFormValue(r, "wknd_"+sid) == "1"
 
-		var arrVal, depVal interface{}
-		if arr != "" {
-			arrVal = arr
+	// Read submitted values (keyed by stop id) into the rows, so we can both
+	// validate and, on failure, re-render without losing the conductor's input.
+	anyArr, anyDep := false, false
+	for i := range stops {
+		sid := fmt.Sprintf("%d", stops[i].StopID)
+		stops[i].ScheduledArrival = strings.TrimSpace(r.FormValue("arr_" + sid))
+		stops[i].ScheduledDeparture = strings.TrimSpace(r.FormValue("dep_" + sid))
+		// Each checkbox is preceded by a hidden "0", so a checked box submits
+		// ["0","1"] — read the last value to honor it.
+		stops[i].RunsWeekday = lastFormValue(r, "wkdy_"+sid) == "1"
+		stops[i].RunsWeekend = lastFormValue(r, "wknd_"+sid) == "1"
+		stops[i].Stops = stops[i].ScheduledArrival != "" || stops[i].ScheduledDeparture != ""
+		if stops[i].ScheduledArrival != "" {
+			anyArr = true
 		}
-		if dep != "" {
-			depVal = dep
+		if stops[i].ScheduledDeparture != "" {
+			anyDep = true
 		}
-		app.db.Exec(
-			`UPDATE train_stops SET scheduled_arrival=?, scheduled_departure=?, runs_weekday=?, runs_weekend=? WHERE id=?`,
-			arrVal, depVal, wkdy, wknd, ts.ID,
-		)
 	}
+
+	if !anyArr || !anyDep {
+		app.renderStopsForm(w, r, train, csrf, stops,
+			"Please enter at least one arrival time and one departure time. Leave a station blank if the train doesn't stop there.")
+		return
+	}
+
+	// Apply: upsert stops that have a time, delete those left blank.
+	for _, s := range stops {
+		if s.Stops {
+			var arrVal, depVal interface{}
+			if s.ScheduledArrival != "" {
+				arrVal = s.ScheduledArrival
+			}
+			if s.ScheduledDeparture != "" {
+				depVal = s.ScheduledDeparture
+			}
+			app.db.Exec(
+				`INSERT INTO train_stops (train_id, stop_id, sort_order, scheduled_arrival, scheduled_departure, runs_weekday, runs_weekend)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(train_id, stop_id) DO UPDATE SET
+				   scheduled_arrival=excluded.scheduled_arrival,
+				   scheduled_departure=excluded.scheduled_departure,
+				   runs_weekday=excluded.runs_weekday,
+				   runs_weekend=excluded.runs_weekend`,
+				train.ID, s.StopID, s.SortOrder, arrVal, depVal, boolToInt(s.RunsWeekday), boolToInt(s.RunsWeekend),
+			)
+		} else {
+			app.db.Exec(`DELETE FROM train_stops WHERE train_id=? AND stop_id=?`, train.ID, s.StopID)
+		}
+	}
+
 	setFlash(w, "Schedule updated.")
 	http.Redirect(w, r, "/trains/"+train.Slug+"/edit/stops", http.StatusSeeOther)
 }
