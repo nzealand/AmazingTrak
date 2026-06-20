@@ -18,7 +18,8 @@ APP_USER="nv"
 APP_DIR="/home/nv/amazingtrak"
 DATA_DIR="/home/nv/amazingtrak"
 SERVICE="amazingtrak"
-GO_BIN="/usr/local/go/bin/go"
+GO_BIN="${GO_BIN:-/usr/local/go/bin/go}"
+[ -x "$GO_BIN" ] || GO_BIN="$(command -v go || true)"
 DB_FILE="${DATA_DIR}/amazingtrak.db"
 
 PULL=1
