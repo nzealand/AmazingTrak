@@ -7,6 +7,9 @@
     An email address is optional — confirmation helps an admin trust your account but is never required.
   </p>
   {{if .Flash}}<div class="flash" style="margin-bottom:1rem;padding:.6rem .8rem;border-radius:6px;background:#fef3c7;color:#92400e">{{.Flash}}</div>{{end}}
+  {{if .Data.EmailTaken}}<div class="flash" style="margin-bottom:1rem;padding:.75rem .9rem;border-radius:6px;background:#fef3c7;color:#92400e;line-height:1.5">
+    That email address is already registered. <a href="/login" style="color:#92400e;font-weight:600">Log in</a>{{if .Data.EmailEnabled}}, or <a href="/forgot-password" style="color:#92400e;font-weight:600">reset your password</a> if you've forgotten it{{end}}.
+  </div>{{end}}
   <form method="post" action="/register" class="register-form" style="display:flex;flex-direction:column;gap:1rem">
     <div class="form-group form-honeypot" aria-hidden="true" style="position:absolute;left:-9999px">
       <label class="form-label">Website</label>
@@ -24,12 +27,12 @@
     </label>
     <label style="display:flex;flex-direction:column;gap:.3rem;font-size:.9rem">
       Password
-      <input name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters"
+      <input name="password" type="password" required minlength="8" maxlength="72" autocomplete="new-password" placeholder="8–72 characters"
         style="padding:.55rem .7rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit">
     </label>
     <label style="display:flex;flex-direction:column;gap:.3rem;font-size:.9rem">
       Confirm password
-      <input name="confirm_password" type="password" required minlength="8" autocomplete="new-password"
+      <input name="confirm_password" type="password" required minlength="8" maxlength="72" autocomplete="new-password"
         style="padding:.55rem .7rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit">
     </label>
     <input type="hidden" name="a" id="f_a">

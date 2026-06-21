@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"net/mail"
 	"sort"
@@ -10,6 +11,10 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+// maxPasswordBytes is bcrypt's hard input limit; bytes past this are silently
+// ignored by bcrypt, so we reject longer passwords rather than truncate them.
+const maxPasswordBytes = 72
 
 // validUsername allows 3–30 chars of letters, digits, underscore, hyphen, dot.
 func validUsername(s string) bool {
@@ -41,6 +46,7 @@ func (app *App) handleRegisterForm(w http.ResponseWriter, r *http.Request) {
 	app.renderPublic(w, r, "register.html", publicPage{
 		Title: "Create an account — " + getSiteName(),
 		Flash: getFlash(w, r),
+		Data:  map[string]any{"EmailTaken": r.URL.Query().Get("emailtaken") == "1", "EmailEnabled": app.emailEnabled()},
 	})
 }
 
@@ -96,6 +102,10 @@ func (app *App) handleRegisterPost(w http.ResponseWriter, r *http.Request) {
 		fail("Password must be at least 8 characters.")
 		return
 	}
+	if len(password) > maxPasswordBytes {
+		fail(fmt.Sprintf("Password must be no more than %d characters.", maxPasswordBytes))
+		return
+	}
 	if password != confirm {
 		fail("Passwords do not match.")
 		return
@@ -114,7 +124,7 @@ func (app *App) handleRegisterPost(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Database error", 500)
 			return
 		} else if used {
-			fail("That email address is already registered. Try logging in, or reset your password if you've forgotten it.")
+			http.Redirect(w, r, "/register?emailtaken=1", http.StatusSeeOther)
 			return
 		}
 	}
@@ -141,10 +151,18 @@ func (app *App) handleRegisterPost(w http.ResponseWriter, r *http.Request) {
 		// Backstop for the unique-email index in case two registrations race
 		// past the check above between the SELECT and this INSERT.
 		if strings.Contains(err.Error(), "idx_users_email_unique") {
-			fail("That email address is already registered. Try logging in, or reset your password if you've forgotten it.")
+			http.Redirect(w, r, "/register?emailtaken=1", http.StatusSeeOther)
 			return
 		}
-		fail("Could not create account: " + err.Error())
+		// Username uniqueness (case-sensitive UNIQUE or the case-insensitive
+		// index) racing past the pre-check lands here too.
+		if strings.Contains(err.Error(), "idx_users_username_ci") || strings.Contains(err.Error(), "users.username") {
+			fail("That username is already taken.")
+			return
+		}
+		// Never surface raw DB/SQL errors to the user; log for diagnosis instead.
+		log.Printf("register: insert user failed: %v", err)
+		fail("Could not create your account. Please try again.")
 		return
 	}
 	userID, _ := res.LastInsertId()
@@ -186,13 +204,16 @@ func (app *App) handleUserLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ipHash := hashIP(r)
-	if app.checkLoginThrottle(ipHash) {
-		setFlash(w, "Too many failed attempts. Please wait 15 minutes.")
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := r.FormValue("password")
+
+	// Throttle before the password is checked; blocked attempts are not recorded
+	// as new failures, so the time-windowed limits drain on their own.
+	if blocked, reason := app.userLoginBlocked(username, ipHash); blocked {
+		setFlash(w, reason)
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	username := strings.TrimSpace(r.FormValue("username"))
-	password := r.FormValue("password")
 	u, err := app.authenticateUser(username, password)
 	if err != nil {
 		http.Error(w, "Server error", 500)
@@ -200,11 +221,16 @@ func (app *App) handleUserLoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 	if u == nil {
 		app.recordLoginAttempt(ipHash, username, false)
+		// Bump the per-account sequential counter (no-op for unknown usernames);
+		// hard-locks the account once it reaches the threshold.
+		app.registerFailedLogin(username)
 		setFlash(w, "Invalid username or password.")
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
 	app.recordLoginAttempt(ipHash, username, true)
+	// A successful login clears the sequential failure counter.
+	app.clearLoginFailures(u.ID)
 	app.db.Exec(`UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id=?`, u.ID)
 	sid, err := app.createUserSession(u.ID, r)
 	if err != nil {
@@ -214,6 +240,67 @@ func (app *App) handleUserLoginPost(w http.ResponseWriter, r *http.Request) {
 	app.setUserSessionCookie(w, sid)
 	setFlash(w, "Logged in as "+u.Username+".")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// handleUserChangePassword lets a logged-in user change their own password by
+// supplying their current password plus a new one.
+func (app *App) handleUserChangePassword(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", 400)
+		return
+	}
+	user, csrf := app.getUserSession(r)
+	if user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if r.FormValue("csrf_token") != csrf {
+		http.Error(w, "Invalid CSRF token", 403)
+		return
+	}
+	back := "/users/" + user.Username
+
+	current := r.FormValue("current_password")
+	newPw := r.FormValue("new_password")
+	confirm := r.FormValue("confirm_password")
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(current)); err != nil {
+		setFlash(w, "Current password is incorrect.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	if len(newPw) < 8 {
+		setFlash(w, "New password must be at least 8 characters.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	if len(newPw) > maxPasswordBytes {
+		setFlash(w, fmt.Sprintf("New password must be no more than %d characters.", maxPasswordBytes))
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	if newPw != confirm {
+		setFlash(w, "New passwords do not match.")
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPw), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Server error", 500)
+		return
+	}
+	if _, err := app.db.Exec(`UPDATE users SET password_hash=?, reset_token='', reset_sent_at=NULL, failed_login_count=0, login_locked=0 WHERE id=?`, string(hash), user.ID); err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	// Invalidate all *other* sessions, then re-establish this one so the user
+	// stays logged in but anyone using a stale session is logged out.
+	app.db.Exec(`DELETE FROM user_sessions WHERE user_id=?`, user.ID)
+	if sid, err := app.createUserSession(user.ID, r); err == nil {
+		app.setUserSessionCookie(w, sid)
+	}
+	setFlash(w, "Password updated successfully.")
+	http.Redirect(w, r, back, http.StatusSeeOther)
 }
 
 func (app *App) handleUserLogout(w http.ResponseWriter, r *http.Request) {
@@ -457,22 +544,28 @@ func (app *App) handleForgotPasswordPost(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Throttle reset requests site-wide to curb enumeration and email-bombing.
-	// The same generic message is shown when throttled so the limit isn't a
-	// signal either.
+	// Per-IP throttle: at most 3 reset requests per IP per day. Counts every
+	// well-formed request (matched or not) so the limit can't be used to probe
+	// which emails exist. The same generic message is shown when throttled.
 	ipHash := hashIP(r)
-	if blocked, _ := app.rlExceeded(3600, 10, ` AND action='password_reset'`); blocked {
+	if blocked, _ := app.rlExceeded(86400, 3, ` AND action='password_reset' AND ip_hash=?`, ipHash); blocked {
 		setFlash(w, generic)
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	// Count every request toward the limit, matched or not.
 	app.recordActionRateLimit("password_reset", ipHash)
 
 	if u, err := userByEmail(app.db, email); err == nil {
-		token := newToken()
-		app.db.Exec(`UPDATE users SET reset_token=?, reset_sent_at=CURRENT_TIMESTAMP WHERE id=?`, token, u.ID)
-		go app.sendResetEmail(u.Email, token)
+		// Per-account throttle: at most 3 reset emails per account per day,
+		// independent of the requesting IP. Keyed by account id in the rate-limit
+		// log. Over-limit requests silently skip sending (still generic message).
+		acctKey := fmt.Sprintf("acct:%d", u.ID)
+		if blocked, _ := app.rlExceeded(86400, 3, ` AND action='pwreset_acct' AND ip_hash=?`, acctKey); !blocked {
+			app.recordActionRateLimit("pwreset_acct", acctKey)
+			token := newToken()
+			app.db.Exec(`UPDATE users SET reset_token=?, reset_sent_at=CURRENT_TIMESTAMP WHERE id=?`, token, u.ID)
+			go app.sendResetEmail(u.Email, token)
+		}
 	}
 
 	setFlash(w, generic)
@@ -522,6 +615,10 @@ func (app *App) handleResetPasswordPost(w http.ResponseWriter, r *http.Request) 
 		fail("Password must be at least 8 characters.")
 		return
 	}
+	if len(password) > maxPasswordBytes {
+		fail(fmt.Sprintf("Password must be no more than %d characters.", maxPasswordBytes))
+		return
+	}
 	if password != confirm {
 		fail("Passwords do not match.")
 		return
@@ -531,7 +628,8 @@ func (app *App) handleResetPasswordPost(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Server error", 500)
 		return
 	}
-	app.db.Exec(`UPDATE users SET password_hash=?, reset_token='', reset_sent_at=NULL WHERE id=?`, string(hash), u.ID)
+	// A successful reset also clears any brute-force lock and the failure counter.
+	app.db.Exec(`UPDATE users SET password_hash=?, reset_token='', reset_sent_at=NULL, failed_login_count=0, login_locked=0 WHERE id=?`, string(hash), u.ID)
 	// Invalidate existing sessions so a reset also locks out anyone who was using
 	// the old password.
 	app.db.Exec(`DELETE FROM user_sessions WHERE user_id=?`, u.ID)

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -17,17 +18,33 @@ type contextKey string
 const sessionCtxKey contextKey = "session"
 const adminUserCtxKey contextKey = "adminUser"
 
-func hashIP(r *http.Request) string {
-	ip := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		// Take only the leftmost (client) IP; rightmost entries can be forged.
-		if comma := strings.IndexByte(fwd, ','); comma >= 0 {
-			ip = strings.TrimSpace(fwd[:comma])
-		} else {
-			ip = strings.TrimSpace(fwd)
+// clientIP resolves the real client IP. The Go app listens only on loopback
+// behind nginx, which is configured to OVERWRITE (not append) the forwarded
+// headers with the true peer address. We therefore trust X-Real-IP /
+// X-Forwarded-For only when the immediate peer is itself loopback (i.e. the
+// local reverse proxy). A directly-connecting client cannot forge these.
+func clientIP(r *http.Request) string {
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		host = h
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if xrip := strings.TrimSpace(r.Header.Get("X-Real-IP")); xrip != "" {
+			return xrip
+		}
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			// nginx sets a single trusted value; take the first token defensively.
+			if comma := strings.IndexByte(fwd, ','); comma >= 0 {
+				return strings.TrimSpace(fwd[:comma])
+			}
+			return strings.TrimSpace(fwd)
 		}
 	}
-	h := sha256.Sum256([]byte(ip))
+	return host
+}
+
+func hashIP(r *http.Request) string {
+	h := sha256.Sum256([]byte(clientIP(r)))
 	return fmt.Sprintf("%x", h[:8])
 }
 
@@ -199,6 +216,86 @@ func (app *App) recordLoginAttempt(ipHash, username string, succeeded bool) {
 		s = 1
 	}
 	app.db.Exec(`INSERT INTO login_attempts (ip_hash, username, succeeded) VALUES (?, ?, ?)`, ipHash, username, s)
+}
+
+// loginHardLockThreshold is the number of sequential failed logins (since the
+// account's last success or password reset) that permanently locks the account
+// until an admin unlocks it or the user resets their password.
+const loginHardLockThreshold = 20
+
+// countFailedLoginsByUser counts failed login attempts for a username (matched
+// case-insensitively) within the given SQLite time modifier, e.g. "-5 minutes".
+func (app *App) countFailedLoginsByUser(username, since string) int {
+	var n int
+	app.db.QueryRow(
+		`SELECT COUNT(*) FROM login_attempts WHERE lower(username)=lower(?) AND succeeded=0 AND created_at > datetime('now', ?)`,
+		username, since,
+	).Scan(&n)
+	return n
+}
+
+// countFailedLoginsByIP counts failed login attempts from an IP within the
+// given SQLite time modifier.
+func (app *App) countFailedLoginsByIP(ipHash, since string) int {
+	var n int
+	app.db.QueryRow(
+		`SELECT COUNT(*) FROM login_attempts WHERE ip_hash=? AND succeeded=0 AND created_at > datetime('now', ?)`,
+		ipHash, since,
+	).Scan(&n)
+	return n
+}
+
+// userLoginBlocked enforces user-account login throttling and returns a
+// human-readable reason when a login attempt should be refused before the
+// password is even checked. Rules (most restrictive wins):
+//
+//	per IP:      10 fails / 60 min, 50 fails / 24 h
+//	per account: 3 fails / 5 min, 5 fails / 24 h
+//	hard lock:   20 sequential fails since last success/reset (needs admin/reset)
+//
+// Blocked attempts are NOT recorded as new failures, so the time-windowed
+// limits drain on their own once attempts stop.
+func (app *App) userLoginBlocked(username, ipHash string) (bool, string) {
+	// IP-based limits apply regardless of whether the username exists.
+	if app.countFailedLoginsByIP(ipHash, "-60 minutes") >= 10 {
+		return true, "Too many failed login attempts from your network. Please wait up to an hour and try again."
+	}
+	if app.countFailedLoginsByIP(ipHash, "-1 day") >= 50 {
+		return true, "Too many failed login attempts from your network. Please try again in 24 hours."
+	}
+	// Account-based limits only apply to real accounts.
+	u, err := userByUsername(app.db, username)
+	if err != nil {
+		return false, ""
+	}
+	if u.LoginLocked {
+		return true, "This account is locked after too many failed login attempts. Reset your password, or contact an admin to unlock it."
+	}
+	if app.countFailedLoginsByUser(username, "-5 minutes") >= 3 {
+		return true, "Too many failed attempts for this account. Please wait a few minutes and try again."
+	}
+	if app.countFailedLoginsByUser(username, "-1 day") >= 5 {
+		return true, "Too many failed attempts for this account. Please wait 24 hours, or reset your password to regain access sooner."
+	}
+	return false, ""
+}
+
+// registerFailedLogin bumps the sequential failed-login counter for an existing
+// account (matched case-insensitively) and hard-locks it once the counter
+// reaches the threshold. No-op for unknown usernames.
+func (app *App) registerFailedLogin(username string) {
+	app.db.Exec(
+		`UPDATE users SET failed_login_count = failed_login_count + 1,
+		   login_locked = CASE WHEN failed_login_count + 1 >= ? THEN 1 ELSE login_locked END
+		 WHERE lower(username)=lower(?)`,
+		loginHardLockThreshold, username,
+	)
+}
+
+// clearLoginFailures resets the sequential counter and lock for an account
+// (after a successful login, password reset, or admin unlock).
+func (app *App) clearLoginFailures(userID int64) {
+	app.db.Exec(`UPDATE users SET failed_login_count=0, login_locked=0 WHERE id=?`, userID)
 }
 
 func (app *App) authenticateAdmin(username, password string) (*AdminUser, error) {

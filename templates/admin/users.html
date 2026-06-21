@@ -28,6 +28,7 @@
           {{else if eq .Status "approved"}}<span class="status-badge status-approved">approved</span>
           {{else if eq .Status "confirmed"}}<span class="status-badge" style="background:#dbeafe;color:#1e40af">confirmed</span>
           {{else}}<span class="status-badge status-pending">pending</span>{{end}}
+          {{if .LoginLocked}}<span class="status-badge status-rejected" title="Locked after too many failed logins">🔒 locked</span>{{end}}
         </td>
         <td>
           {{if .SubmissionCount}}<a href="{{$.AdminPrefix}}/users/{{.ID}}/submissions">{{.SubmissionCount}}</a>{{else}}0{{end}}
@@ -46,8 +47,14 @@
               <button class="btn btn-sm btn-primary" type="submit">Approve</button>
             </form>
             {{end}}
+            {{if .LoginLocked}}
+            <form method="post" action="{{$.AdminPrefix}}/users/{{.ID}}/unlock">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn btn-sm btn-primary" type="submit" title="Clear the failed-login lock">Unlock</button>
+            </form>
+            {{end}}
             <form method="post" action="{{$.AdminPrefix}}/users/{{.ID}}/reset-password"
-              onsubmit="var p=prompt('Set new password for {{.Username}} (min 8 chars):');if(!p)return false;this.querySelector('[name=new_password]').value=p;return p.length>=8||(alert('Password must be at least 8 characters.'),false)">
+              onsubmit="var p=prompt('Set new password for {{.Username}} (8–72 chars):');if(!p)return false;this.querySelector('[name=new_password]').value=p;return (p.length>=8&&p.length<=72)||(alert('Password must be 8–72 characters.'),false)">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <input type="hidden" name="new_password" value="">
               <button class="btn btn-sm btn-secondary" type="submit">Reset Password</button>

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -91,6 +93,8 @@ func (app *App) deleteUserWithSubmissionRule(userID int64) error {
 		app.db.Exec(`DELETE FROM suggestions WHERE id=?`, s.id)
 	}
 
+	// Clean up email verification rate-limit records before deleting the user.
+	app.db.Exec(`DELETE FROM email_verifications WHERE user_id=?`, userID)
 	// Removing the user clears user_id on any preserved (rare) rows via FK.
 	_, err = app.db.Exec(`DELETE FROM users WHERE id=?`, userID)
 	return err
@@ -235,6 +239,27 @@ func (app *App) handleAdminAddUser(w http.ResponseWriter, r *http.Request) {
 		fail("Password must be at least 8 characters.")
 		return
 	}
+	if len(password) > maxPasswordBytes {
+		fail(fmt.Sprintf("Password must be no more than %d characters.", maxPasswordBytes))
+		return
+	}
+	// Case-insensitive username uniqueness (matches the public registration rule).
+	if _, err := userByUsername(app.db, username); err == nil {
+		fail("That username is already taken.")
+		return
+	} else if err != sql.ErrNoRows {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	if email != "" {
+		if used, err := emailInUse(app.db, email, 0); err != nil {
+			http.Error(w, "Database error", 500)
+			return
+		} else if used {
+			fail("That email address is already registered to another account.")
+			return
+		}
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		http.Error(w, "Server error", 500)
@@ -245,7 +270,8 @@ func (app *App) handleAdminAddUser(w http.ResponseWriter, r *http.Request) {
 		username, email, string(hash),
 	)
 	if err != nil {
-		fail("Could not create user (username may be taken): " + err.Error())
+		log.Printf("admin add user: insert failed: %v", err)
+		fail("Could not create the user. The username or email may already be taken.")
 		return
 	}
 	s := sessionFromCtx(r)
@@ -279,6 +305,10 @@ func (app *App) handleAdminAddAdmin(w http.ResponseWriter, r *http.Request) {
 		fail("Admin password must be at least 8 characters.")
 		return
 	}
+	if len(password) > maxPasswordBytes {
+		fail(fmt.Sprintf("Admin password must be no more than %d characters.", maxPasswordBytes))
+		return
+	}
 	if level < 1 || level > 6 {
 		fail("Choose a permission level from 1 to 6.")
 		return
@@ -293,7 +323,8 @@ func (app *App) handleAdminAddAdmin(w http.ResponseWriter, r *http.Request) {
 		username, string(hash), level,
 	)
 	if err != nil {
-		fail("Could not create admin (username may be taken): " + err.Error())
+		log.Printf("admin add admin: insert failed: %v", err)
+		fail("Could not create the admin account. The username may already be taken.")
 		return
 	}
 	s := sessionFromCtx(r)
@@ -372,14 +403,21 @@ func (app *App) handleAdminUserResetPassword(w http.ResponseWriter, r *http.Requ
 		http.Redirect(w, r, r.Referer(), http.StatusSeeOther)
 		return
 	}
+	if len(password) > maxPasswordBytes {
+		setFlash(w, fmt.Sprintf("Password must be no more than %d characters.", maxPasswordBytes))
+		http.Redirect(w, r, r.Referer(), http.StatusSeeOther)
+		return
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		http.Error(w, "Server error", 500)
 		return
 	}
-	res, err := app.db.Exec(`UPDATE users SET password_hash=?, reset_token='', reset_sent_at=NULL WHERE id=?`, string(hash), id)
+	// Reset also clears any brute-force lock and the failure counter.
+	res, err := app.db.Exec(`UPDATE users SET password_hash=?, reset_token='', reset_sent_at=NULL, failed_login_count=0, login_locked=0 WHERE id=?`, string(hash), id)
 	if err != nil {
-		setFlash(w, "Error updating password: "+err.Error())
+		log.Printf("admin reset password: update failed (user %d): %v", id, err)
+		setFlash(w, "Could not update the password. Please try again.")
 		http.Redirect(w, r, r.Referer(), http.StatusSeeOther)
 		return
 	}
@@ -392,6 +430,35 @@ func (app *App) handleAdminUserResetPassword(w http.ResponseWriter, r *http.Requ
 	s := sessionFromCtx(r)
 	app.logAudit(s.AdminUserID, "reset_user_password", "user", id, "")
 	setFlash(w, "Password reset and all sessions invalidated.")
+	http.Redirect(w, r, app.adminPrefix+"/users", http.StatusSeeOther)
+}
+
+// handleAdminUserUnlock clears a brute-force login lock (and the sequential
+// failure counter) for a user account.
+func (app *App) handleAdminUserUnlock(w http.ResponseWriter, r *http.Request) {
+	if !app.checkCSRF(r) {
+		http.Error(w, "Invalid CSRF token", 403)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid user ID", 400)
+		return
+	}
+	res, err := app.db.Exec(`UPDATE users SET failed_login_count=0, login_locked=0 WHERE id=?`, id)
+	if err != nil {
+		log.Printf("admin unlock user: update failed (user %d): %v", id, err)
+		setFlash(w, "Could not unlock the account. Please try again.")
+		http.Redirect(w, r, app.adminPrefix+"/users", http.StatusSeeOther)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	s := sessionFromCtx(r)
+	app.logAudit(s.AdminUserID, "unlock_user", "user", id, "")
+	setFlash(w, "Account unlocked.")
 	http.Redirect(w, r, app.adminPrefix+"/users", http.StatusSeeOther)
 }
 

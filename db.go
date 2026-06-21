@@ -94,8 +94,22 @@ func runMigrations(db *sql.DB) error {
 	// email-confirmation token so resetting a password never disturbs verification.
 	db.Exec(`ALTER TABLE users ADD COLUMN reset_token TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`ALTER TABLE users ADD COLUMN reset_sent_at TEXT`)
+	// Brute-force protection: a sequential failed-login counter (reset on any
+	// successful login or password reset) and a hard-lock flag set when the
+	// counter crosses the lockout threshold. Cleared by an admin unlock or a
+	// password reset.
+	db.Exec(`ALTER TABLE users ADD COLUMN failed_login_count INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE users ADD COLUMN login_locked INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token)`)
+	// Case-insensitive username uniqueness, preserving the user's chosen display
+	// casing (the original case-sensitive UNIQUE on username stays). Best-effort:
+	// if legacy case-duplicate usernames predate this index it simply won't be
+	// created, and the handler-level case-insensitive check still blocks new ones.
+	db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_ci ON users(lower(username))`)
+	// Speed up the per-account / per-IP login throttle lookups.
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_login_attempts_user_time ON login_attempts(username, created_at)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time ON login_attempts(ip_hash, created_at)`)
 	// One account per email address (case-insensitive), for non-empty addresses
 	// only — blank emails stay allowed and unconstrained. Best-effort: if legacy
 	// duplicate emails predate this index it simply won't be created, and the

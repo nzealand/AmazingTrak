@@ -565,6 +565,12 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+	// Bind to loopback only by default: the app sits behind nginx, which is the
+	// only thing that should reach it. Override with BIND_ADDR if ever needed.
+	bindAddr := os.Getenv("BIND_ADDR")
+	if bindAddr == "" {
+		bindAddr = "127.0.0.1"
+	}
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
 		dbPath = "amazingtrak.db"
@@ -728,6 +734,7 @@ func main() {
 	mux.HandleFunc("POST /reset-password", app.handleResetPasswordPost)
 	mux.HandleFunc("GET /confirm-email", app.handleConfirmEmail)
 	mux.HandleFunc("POST /resend-verification", app.requireUser(app.handleResendVerification))
+	mux.HandleFunc("POST /users/change-password", app.requireUser(app.handleUserChangePassword))
 	mux.HandleFunc("GET /users/{username}", app.requireUser(app.handleUserProfile))
 
 	p := app.adminPrefix
@@ -823,6 +830,7 @@ func main() {
 	mux.HandleFunc("POST "+p+"/users/{id}/delete", ru(app.handleAdminUserDelete))
 	mux.HandleFunc("POST "+p+"/users/{id}/anonymize", ru(app.handleAdminUserAnonymize))
 	mux.HandleFunc("POST "+p+"/users/{id}/reset-password", ru(app.handleAdminUserResetPassword))
+	mux.HandleFunc("POST "+p+"/users/{id}/unlock", ru(app.handleAdminUserUnlock))
 	mux.HandleFunc("POST "+p+"/admins/{id}/delete", rca(app.handleAdminAdminDelete))
 
 	// Admin settings (permission level 5)
@@ -833,14 +841,14 @@ func main() {
 
 	handler := app.limitBody(app.securityHeaders(mux))
 	srv := &http.Server{
-		Addr:              ":" + port,
+		Addr:              bindAddr + ":" + port,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	log.Printf("listening on :%s  admin at %s", port, app.adminPrefix)
+	log.Printf("listening on %s:%s  admin at %s", bindAddr, port, app.adminPrefix)
 	log.Fatal(srv.ListenAndServe())
 }
 

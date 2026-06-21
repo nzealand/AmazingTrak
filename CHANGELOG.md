@@ -4,6 +4,17 @@ All notable changes to AmazingTrak are documented here.
 
 ===3.12.0=====
 
+### Security — accounts & brute-force protection
+- **App binds to loopback only**: the Go server now listens on `127.0.0.1` by default (override with `BIND_ADDR`), so it is reachable only through nginx.
+- **Trusted-proxy client IP**: forwarded-IP headers (`X-Real-IP` / `X-Forwarded-For`) are honored only when the immediate peer is loopback (the local nginx); a direct client can no longer forge them to evade rate limits. The bundled nginx config now **overwrites** these headers with the real peer address instead of appending the client-supplied value.
+- **Login throttling (registered users)**: per-account — 3 failed attempts / 5 min, 5 / 24 h; per-IP — 10 failed attempts / 60 min, 50 / 24 h. Blocked attempts are not recorded, so the time windows drain on their own.
+- **Hard lock**: after 20 sequential failed logins (since the last successful login or password reset), the account is locked until an admin unlocks it or the user resets their password. Admins get an **Unlock** action and a 🔒 locked badge on the Users page.
+- **Password reset throttling**: at most 3 reset requests per IP per day and 3 per account per day (independent), still enumeration-safe (one generic message).
+- **Self-service password change** now invalidates all other sessions (keeping the current one) and clears any login lock.
+- **Password length**: passwords are capped at 72 bytes (bcrypt's limit) instead of being silently truncated, with a clear message; minimum stays 8.
+- **Case-insensitive usernames**: usernames are now unique case-insensitively (login and registration), while the user's chosen display casing is preserved.
+- **No raw error leakage**: account/admin-creation and password-update failures show a friendly message; the underlying SQL/DB error is logged server-side only.
+
 ### Email (optional, via Resend)
 - **Optional email backend**: outbound email now goes through the Resend HTTP API, gated by a `RESEND_API_KEY` env var plus an admin enable flag and sender address. With no key/flag the site behaves exactly as before — nothing is sent and no email-dependent feature blocks a user. SMTP settings retired.
 - **Email verification**: verification links now expire after a configurable window (default 24h); users can request a fresh link (rate limited 3/day per user, 50/day site-wide) from their profile. Verification emails link back to the site.

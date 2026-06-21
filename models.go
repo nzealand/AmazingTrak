@@ -327,6 +327,10 @@ type User struct {
 	VideoCount      int
 	CommentCount    int
 	IsSpammer       bool
+	// Sequential failed-login count since the last success/reset, and the
+	// hard-lock flag set when it crosses the lockout threshold.
+	FailedLoginCount int
+	LoginLocked      bool
 }
 
 // StatusLabel renders a user's account status for display.
@@ -919,11 +923,11 @@ func allAdminUsers(db *sql.DB) ([]AdminUser, error) {
 
 // ----- User (registered public account) queries -----
 
-const userSelectCols = `id, username, COALESCE(email,''), password_hash, status, email_confirmed, COALESCE(confirm_token,''), created_at, last_login_at, is_spammer`
+const userSelectCols = `id, username, COALESCE(email,''), password_hash, status, email_confirmed, COALESCE(confirm_token,''), created_at, last_login_at, is_spammer, failed_login_count, login_locked`
 
 func scanUser(row interface{ Scan(...interface{}) error }) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.Status, &u.EmailConfirmed, &u.ConfirmToken, &u.CreatedAt, &u.LastLoginAt, &u.IsSpammer)
+	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.Status, &u.EmailConfirmed, &u.ConfirmToken, &u.CreatedAt, &u.LastLoginAt, &u.IsSpammer, &u.FailedLoginCount, &u.LoginLocked)
 	return u, err
 }
 
@@ -931,8 +935,10 @@ func userByID(db *sql.DB, id int64) (User, error) {
 	return scanUser(db.QueryRow(`SELECT `+userSelectCols+` FROM users WHERE id=?`, id))
 }
 
+// userByUsername looks up a user by username case-insensitively (the stored
+// display casing is preserved; only matching is case-insensitive).
 func userByUsername(db *sql.DB, username string) (User, error) {
-	return scanUser(db.QueryRow(`SELECT `+userSelectCols+` FROM users WHERE username=?`, username))
+	return scanUser(db.QueryRow(`SELECT `+userSelectCols+` FROM users WHERE lower(username)=lower(?)`, username))
 }
 
 func userByConfirmToken(db *sql.DB, token string) (User, error) {
@@ -972,7 +978,7 @@ func allUsers(db *sql.DB) ([]User, error) {
 	var out []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.Status, &u.EmailConfirmed, &u.ConfirmToken, &u.CreatedAt, &u.LastLoginAt, &u.IsSpammer, &u.SubmissionCount, &u.VideoCount, &u.CommentCount); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.Status, &u.EmailConfirmed, &u.ConfirmToken, &u.CreatedAt, &u.LastLoginAt, &u.IsSpammer, &u.FailedLoginCount, &u.LoginLocked, &u.SubmissionCount, &u.VideoCount, &u.CommentCount); err != nil {
 			return nil, err
 		}
 		out = append(out, u)
