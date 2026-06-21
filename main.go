@@ -560,6 +560,15 @@ func (app *App) securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// isTrue reports whether an env value means "on" (1/true/yes/on, case-insensitive).
+func isTrue(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -567,9 +576,16 @@ func main() {
 	}
 	// Bind to loopback only by default: the app sits behind nginx, which is the
 	// only thing that should reach it. Override with BIND_ADDR if ever needed.
+	// In dev mode (DEV=true) we bind to all interfaces so the server is reachable
+	// from other machines on the LAN (e.g. http://192.168.x.x:PORT/).
+	dev := isTrue(os.Getenv("DEV"))
 	bindAddr := os.Getenv("BIND_ADDR")
 	if bindAddr == "" {
-		bindAddr = "127.0.0.1"
+		if dev {
+			bindAddr = "0.0.0.0"
+		} else {
+			bindAddr = "127.0.0.1"
+		}
 	}
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
