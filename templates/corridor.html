@@ -3,7 +3,7 @@
 {{$d := .Data}}
 <meta property="og:type" content="website">
 <meta property="og:title" content="{{$d.Corridor.Name}} — {{siteName}}">
-<meta property="og:url" content="{{baseURL}}/corridors/{{$d.Corridor.Slug}}">
+<meta property="og:url" content="{{baseURL}}/routes/{{$d.Corridor.Slug}}">
 {{if $d.Corridor.HeroImageURL}}<meta property="og:image" content="{{absURL $d.Corridor.HeroImageURL}}">{{end}}
 {{if $d.BestVideo}}<meta property="og:video" content="{{$d.BestVideo.URL}}">{{end}}
 <meta property="og:description" content="{{$d.Corridor.Name}}{{if $d.Corridor.Region}} — {{$d.Corridor.Region}}{{end}}{{if $d.BestVideo}} — best video by {{$d.BestVideo.Contributor}}{{end}}">
@@ -25,7 +25,7 @@
 {{else}}
 <div class="page-hero" style="background:linear-gradient(135deg,#1e3a5f,#0a1628);color:#fff">
   <div class="container">
-    <nav style="font-size:.85rem;opacity:.75;margin-bottom:.5rem"><a href="/corridors" style="color:#fff">Corridors</a> › {{$d.Corridor.Name}}</nav>
+    <nav style="font-size:.85rem;opacity:.75;margin-bottom:.5rem"><a href="/routes" style="color:#fff">Routes</a> › {{$d.Corridor.Name}}</nav>
     <h1 style="font-size:2rem;font-weight:700">{{$d.Corridor.Name}}</h1>
     {{if $d.Corridor.Region}}<span class="corridor-region" style="margin-top:.5rem">{{$d.Corridor.Region}}</span>{{end}}
   </div>
@@ -37,7 +37,7 @@
 
   {{if not $d.Corridor.HeroImageURL}}
   {{else}}
-  <nav style="font-size:.85rem;color:var(--muted);margin-bottom:1rem"><a href="/corridors">Corridors</a> › {{$d.Corridor.Name}}</nav>
+  <nav style="font-size:.85rem;color:var(--muted);margin-bottom:1rem"><a href="/routes">Routes</a> › {{$d.Corridor.Name}}</nav>
   {{end}}
 
   {{if $d.Corridor.Description}}
@@ -50,22 +50,22 @@
       <span style="color:var(--muted)">🧑‍✈️ Maintained by <a href="/users/{{$d.Corridor.ConductorUsername}}">{{$d.Corridor.ConductorUsername}}</a></span>
     {{else if $d.CanManage}}
     {{else if $d.CanRequest}}
-      <form method="post" action="/corridors/{{$d.Corridor.Slug}}/conductor/request" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0">
+      <form method="post" action="/routes/{{$d.Corridor.Slug}}/conductor/request" style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0">
         <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
-        <input class="form-input" type="text" name="message" maxlength="500" placeholder="Why you'd like to maintain this corridor (optional)" style="width:min(22rem,55vw);padding:.35rem .55rem;font-size:.85rem">
+        <input class="form-input" type="text" name="message" maxlength="500" placeholder="Why you'd like to maintain this route (optional)" style="width:min(22rem,55vw);padding:.35rem .55rem;font-size:.85rem">
         <button class="btn btn-secondary btn-sm" type="submit">Request to be Conductor</button>
       </form>
     {{else if $d.NeedsVerify}}
       <span style="color:var(--muted)">Verify your email to request the Conductor role — see your <a href="/users/{{.CurrentUser.Username}}">profile</a>.</span>
     {{else if $d.HasRequested}}
-      <span style="color:var(--muted)">Your request to maintain this corridor is pending review.</span>
+      <span style="color:var(--muted)">Your request to maintain this route is pending review.</span>
     {{else if not .CurrentUser}}
-      <span style="color:var(--muted)">Want to help maintain this corridor? <a href="/login">Log in</a> or <a href="/register">register</a> to request the Conductor role.</span>
+      <span style="color:var(--muted)">Want to help maintain this route? <a href="/login">Log in</a> or <a href="/register">register</a> to request the Conductor role.</span>
     {{end}}
 
     {{if $d.CanManage}}
-      <span style="color:var(--muted)">🧑‍✈️ You maintain this corridor.</span>
-      <a href="/corridors/{{$d.Corridor.Slug}}/trains/new" class="btn btn-secondary btn-sm">+ Add Train</a>
+      <span style="color:var(--muted)">🧑‍✈️ You maintain this route.</span>
+      <a href="/routes/{{$d.Corridor.Slug}}/trains/new" class="btn btn-secondary btn-sm">+ Add Train</a>
     {{end}}
 
     {{if $d.Corridor.OnTimePercent.Valid}}
@@ -106,7 +106,7 @@
             <a href="/trains/{{.Slug}}/edit">✎ Edit</a>
             <form method="post" action="/trains/{{.Slug}}/deactivate" style="margin:0" onsubmit="return confirm('{{if .IsActive}}Deactivate{{else}}Reactivate{{end}} {{.DisplayName}}?')">
               <input type="hidden" name="csrf_token" value="{{$.UserCSRF}}">
-              <input type="hidden" name="return_to" value="/corridors/{{$d.Corridor.Slug}}">
+              <input type="hidden" name="return_to" value="/routes/{{$d.Corridor.Slug}}">
               <button type="submit" style="background:none;border:none;padding:0;color:var(--accent);font:inherit;cursor:pointer">{{if .IsActive}}Deactivate{{else}}Reactivate{{end}}</button>
             </form>
           </div>
@@ -179,14 +179,14 @@
     {{end}}
 
     {{if .CurrentUser}}
-    <form method="post" action="/corridors/{{$d.Corridor.Slug}}/comment" class="admin-form" style="max-width:640px">
+    <form method="post" action="/routes/{{$d.Corridor.Slug}}/comment" class="admin-form" style="max-width:640px">
       <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">
       <input type="text" name="website" value="" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
       <input type="text" name="a" value="" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true">
       <input type="hidden" name="b" value="ok">
       <div class="form-group">
         <label class="form-label" for="comment-body">Add a comment</label>
-        <textarea class="form-textarea" id="comment-body" name="body" rows="3" maxlength="2000" required placeholder="Share what you know about this corridor…"></textarea>
+        <textarea class="form-textarea" id="comment-body" name="body" rows="3" maxlength="2000" required placeholder="Share what you know about this route…"></textarea>
         <div class="form-hint">Plain text only. Comments are reviewed by an admin before they appear.</div>
       </div>
       <button class="btn btn-primary" type="submit">Post comment</button>

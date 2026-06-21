@@ -16,6 +16,7 @@
     </label>
     <button type="submit" class="btn btn-primary" style="padding:.6rem;border-radius:6px;border:none;background:#1e3a5f;color:#fff;font-weight:600;cursor:pointer">Log in</button>
   </form>
+  {{if .Data.EmailEnabled}}<p style="margin-top:1rem;font-size:.9rem;opacity:.8"><a href="/forgot-password">Forgot your password?</a></p>{{end}}
   <p style="margin-top:1.25rem;font-size:.9rem;opacity:.8">Need an account? <a href="/register">Register</a>.</p>
 </div>
 {{end}}

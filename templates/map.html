@@ -43,7 +43,7 @@ function jsSlugify(s) {
 function normSlug(s) {
   return s.replace(/^amtrak-/, '');
 }
-// Map of normalized slug (leading "amtrak-" stripped) -> actual corridor slug.
+// Map of normalized slug (leading "amtrak-" stripped) -> actual route slug.
 var CORRIDOR_BY_NORM = {};
 {{range .Data}}{{if .Slug}}CORRIDOR_BY_NORM[normSlug("{{.Slug}}")] = "{{.Slug}}";
 {{end}}{{end}}
@@ -95,7 +95,7 @@ function findCorridorSlug(name) {
         var popup = '<strong style="font-size:.9rem">' + displayName + '</strong>';
         var corridorSlug = findCorridorSlug(name);
         if (corridorSlug) {
-          popup += '<br><a href="/corridors/' + corridorSlug + '" style="font-size:.82rem">' + displayName + ' →</a>';
+          popup += '<br><a href="/routes/' + corridorSlug + '" style="font-size:.82rem">' + displayName + ' →</a>';
         }
         if (routeUrl) {
           popup += '<br><a href="' + routeUrl + '" target="_blank" rel="noopener" style="font-size:.82rem">Amtrak schedule →</a>';

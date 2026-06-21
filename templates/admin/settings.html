@@ -211,6 +211,31 @@
   </section>
 
   <section>
+    <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">User Approval</h3>
+    <form method="post" action="{{.AdminPrefix}}/settings" class="admin-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="user_approval">
+      <div class="form-group">
+        <label class="form-label">
+          <input type="hidden" name="auto_approve_on_confirm" value="0">
+          <input type="checkbox" name="auto_approve_on_confirm" value="1" {{if $d.Prefs.AutoApproveOnConfirm}}checked{{end}}>
+          Auto-approve users on email confirmation
+        </label>
+        <div class="form-hint">When a user confirms their email address, immediately promote them to auto-approved (skips manual review). Requires email to be enabled.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">
+          <input type="hidden" name="auto_approve_on_video" value="0">
+          <input type="checkbox" name="auto_approve_on_video" value="1" {{if $d.Prefs.AutoApproveOnVideo}}checked{{end}}>
+          Auto-approve users when a video submission is approved
+        </label>
+        <div class="form-hint">When an admin approves a video submitted by a registered user, automatically promote that user to auto-approved. Uncheck to require manual approval regardless of submission history.</div>
+      </div>
+      <button class="btn btn-primary" type="submit">Save User Approval Settings</button>
+    </form>
+  </section>
+
+  <section>
     <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Email (Resend)</h3>
     <p style="font-size:.875rem;color:var(--muted);margin-bottom:1rem">
       Email is optional. It powers address verification and admin notifications via

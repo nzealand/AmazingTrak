@@ -1,7 +1,7 @@
 {{define "admin_content"}}
 {{$d := .Data}}
 <div style="margin-bottom:1rem">
-  <a href="{{.AdminPrefix}}/corridors/{{$d.Corridor.ID}}" class="btn btn-secondary btn-sm">← Edit Corridor</a>
+  <a href="{{.AdminPrefix}}/routes/{{$d.Corridor.ID}}" class="btn btn-secondary btn-sm">← Edit Route</a>
 </div>
 
 {{if $d.Media}}
@@ -33,34 +33,34 @@
       {{end}}
       <div class="media-admin-actions">
         {{if eq .MediaType "image"}}
-        <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/hero">
+        <form method="post" action="{{$.AdminPrefix}}/routes/{{$d.Corridor.ID}}/media/{{.ID}}/hero">
           <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
           <button class="btn btn-sm btn-secondary" type="submit">Set Hero</button>
         </form>
-        <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/thumbnail">
+        <form method="post" action="{{$.AdminPrefix}}/routes/{{$d.Corridor.ID}}/media/{{.ID}}/thumbnail">
           <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
           <button class="btn btn-sm btn-secondary" type="submit">Set Thumb</button>
         </form>
         {{end}}
-        <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/delete"
+        <form method="post" action="{{$.AdminPrefix}}/routes/{{$d.Corridor.ID}}/media/{{.ID}}/delete"
           onsubmit="return confirm('Delete this media item?')">
           <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
           <button class="btn btn-sm btn-danger" type="submit">Delete</button>
         </form>
       </div>
       {{if eq .MediaType "video"}}
-      <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/title" style="margin-top:.5rem;display:flex;gap:.35rem;align-items:flex-start">
+      <form method="post" action="{{$.AdminPrefix}}/routes/{{$d.Corridor.ID}}/media/{{.ID}}/title" style="margin-top:.5rem;display:flex;gap:.35rem;align-items:flex-start">
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <input class="form-input" type="text" name="title" placeholder="Title…" value="{{.Title}}" style="font-size:.78rem;padding:.3rem .5rem;flex:1">
         <button class="btn btn-sm btn-secondary" type="submit" style="white-space:nowrap">Update title</button>
       </form>
       {{end}}
-      <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/caption" style="margin-top:.5rem;display:flex;gap:.35rem;align-items:flex-start">
+      <form method="post" action="{{$.AdminPrefix}}/routes/{{$d.Corridor.ID}}/media/{{.ID}}/caption" style="margin-top:.5rem;display:flex;gap:.35rem;align-items:flex-start">
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <textarea class="form-textarea" name="caption" rows="2" placeholder="Caption…" style="font-size:.78rem;padding:.3rem .5rem;flex:1;resize:vertical">{{.Caption}}</textarea>
         <button class="btn btn-sm btn-secondary" type="submit" style="white-space:nowrap">Update caption</button>
       </form>
-      <form method="post" action="{{$.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/{{.ID}}/geo" class="geo-form">
+      <form method="post" action="{{$.AdminPrefix}}/routes/{{$d.Corridor.ID}}/media/{{.ID}}/geo" class="geo-form">
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <input class="form-input" type="number" name="lat" step="0.000001" placeholder="Latitude" value="{{.LatStr}}" style="font-size:.78rem;padding:.3rem .5rem">
         <input class="form-input" type="number" name="lon" step="0.000001" placeholder="Longitude" value="{{.LonStr}}" style="font-size:.78rem;padding:.3rem .5rem">
@@ -72,11 +72,11 @@
   {{end}}
 </div>
 {{else}}
-<p style="color:var(--muted);margin-bottom:1.5rem">No media yet for this corridor.</p>
+<p style="color:var(--muted);margin-bottom:1.5rem">No media yet for this route.</p>
 {{end}}
 
 <h3 style="font-size:1rem;font-weight:600;margin-bottom:.75rem">Add Media</h3>
-<form method="post" action="{{.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media/add"
+<form method="post" action="{{.AdminPrefix}}/routes/{{$d.Corridor.ID}}/media/add"
   enctype="multipart/form-data" class="admin-form" id="media-form">
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <input type="hidden" name="source_type" id="source_type" value="url">
@@ -124,7 +124,7 @@
     </div>
 
     <div id="tab-paste" class="tab-panel">
-      <p id="paste-tab-label" style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem">Paste an image to add it to the corridor media library.</p>
+      <p id="paste-tab-label" style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem">Paste an image to add it to the route media library.</p>
       <div id="paste-area" class="paste-zone">Click here, then press Ctrl+V (or ⌘V) to paste an image</div>
       <input type="file" name="paste_file" id="paste-file" style="display:none" accept="image/*">
       <img id="paste-preview" class="upload-preview" style="display:none;margin-top:.75rem">
@@ -164,9 +164,9 @@ var tabConfig = {
   website:  {panel:'tab-website',  srcType:'url',    mediaType:'website', postAction:'',              pasteLabel:''},
   imageurl: {panel:'tab-imageurl', srcType:'url',    mediaType:'image',   postAction:'',              pasteLabel:''},
   upload:   {panel:'tab-upload',   srcType:'upload', mediaType:'image',   postAction:'',              pasteLabel:''},
-  paste:    {panel:'tab-paste',    srcType:'paste',  mediaType:'image',   postAction:'',              pasteLabel:'Paste an image to add it to the corridor media library.'},
-  banner:   {panel:'tab-paste',    srcType:'paste',  mediaType:'image',   postAction:'set_hero',      pasteLabel:'Paste an image to set it as the corridor hero (banner) image.'},
-  thumb:    {panel:'tab-paste',    srcType:'paste',  mediaType:'image',   postAction:'set_thumbnail', pasteLabel:'Paste an image to set it as the corridor thumbnail.'}
+  paste:    {panel:'tab-paste',    srcType:'paste',  mediaType:'image',   postAction:'',              pasteLabel:'Paste an image to add it to the route media library.'},
+  banner:   {panel:'tab-paste',    srcType:'paste',  mediaType:'image',   postAction:'set_hero',      pasteLabel:'Paste an image to set it as the route hero (banner) image.'},
+  thumb:    {panel:'tab-paste',    srcType:'paste',  mediaType:'image',   postAction:'set_thumbnail', pasteLabel:'Paste an image to set it as the route thumbnail.'}
 };
 
 var currentTab = 'schedule';

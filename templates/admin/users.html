@@ -46,6 +46,12 @@
               <button class="btn btn-sm btn-primary" type="submit">Approve</button>
             </form>
             {{end}}
+            <form method="post" action="{{$.AdminPrefix}}/users/{{.ID}}/reset-password"
+              onsubmit="var p=prompt('Set new password for {{.Username}} (min 8 chars):');if(!p)return false;this.querySelector('[name=new_password]').value=p;return p.length>=8||(alert('Password must be at least 8 characters.'),false)">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input type="hidden" name="new_password" value="">
+              <button class="btn btn-sm btn-secondary" type="submit">Reset Password</button>
+            </form>
             {{if not .IsApproved}}
             <form method="post" action="{{$.AdminPrefix}}/users/{{.ID}}/anonymize" onsubmit="return confirm('Anonymize {{.Username}}?\n\nThis will:\n• Rename them to anonymous[N]\n• Clear their email address\n• Reject all their comments\n\nTheir submissions remain attributed to the new anonymous username. This cannot be undone.')">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
@@ -137,9 +143,9 @@
         <option value="1">L1 — Suggestions</option>
         <option value="2">L2 — Suggestions, Comments</option>
         <option value="3">L3 — Suggestions, Comments, Trains</option>
-        <option value="4">L4 — Suggestions, Comments, Trains, Corridors</option>
-        <option value="5">L5 — Suggestions, Comments, Trains, Corridors, Settings</option>
-        <option value="6">L6 — Suggestions, Comments, Trains, Corridors, Settings, Users</option>
+        <option value="4">L4 — Suggestions, Comments, Trains, Routes</option>
+        <option value="5">L5 — Suggestions, Comments, Trains, Routes, Settings</option>
+        <option value="6">L6 — Suggestions, Comments, Trains, Routes, Settings, Users</option>
       </select>
     </div>
     <button class="btn btn-primary" type="submit">Create Admin</button>

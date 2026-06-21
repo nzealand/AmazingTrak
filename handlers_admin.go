@@ -114,7 +114,7 @@ func (app *App) handleAdminCorridors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	app.renderAdmin(w, r, "corridors.html", adminPage{
-		Title:     "Corridors",
+		Title:     "Routes",
 		Flash:     getFlash(w, r),
 		CSRFToken: s.CSRFToken,
 		Data:      corridors,
@@ -133,7 +133,7 @@ func (app *App) handleAdminCorridorCreate(w http.ResponseWriter, r *http.Request
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
 		setFlash(w, "Name is required.")
-		http.Redirect(w, r, app.adminPrefix+"/corridors", http.StatusSeeOther)
+		http.Redirect(w, r, app.adminPrefix+"/routes", http.StatusSeeOther)
 		return
 	}
 	slug := slugify(name)
@@ -143,15 +143,15 @@ func (app *App) handleAdminCorridorCreate(w http.ResponseWriter, r *http.Request
 		name, slug, region,
 	)
 	if err != nil {
-		setFlash(w, "Error creating corridor: "+err.Error())
-		http.Redirect(w, r, app.adminPrefix+"/corridors", http.StatusSeeOther)
+		setFlash(w, "Error creating route: "+err.Error())
+		http.Redirect(w, r, app.adminPrefix+"/routes", http.StatusSeeOther)
 		return
 	}
 	id, _ := res.LastInsertId()
 	s := sessionFromCtx(r)
 	app.logAudit(s.AdminUserID, "create", "corridor", id, name)
 	app.invalidateIndexCache()
-	http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d", app.adminPrefix, id), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("%s/routes/%d", app.adminPrefix, id), http.StatusSeeOther)
 }
 
 func (app *App) handleAdminCorridorEdit(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +181,7 @@ func (app *App) handleAdminCorridorEdit(w http.ResponseWriter, r *http.Request) 
 		Trains   []Train
 	}
 	app.renderAdmin(w, r, "corridor_edit.html", adminPage{
-		Title:     "Edit Corridor: " + corridor.Name,
+		Title:     "Edit Route: " + corridor.Name,
 		Flash:     getFlash(w, r),
 		CSRFToken: s.CSRFToken,
 		Data:      editData{Corridor: corridor, Trains: trains},
@@ -212,7 +212,7 @@ func (app *App) handleAdminCorridorUpdate(w http.ResponseWriter, r *http.Request
 
 	if name == "" || slug == "" {
 		setFlash(w, "Name and slug are required.")
-		http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d", app.adminPrefix, id), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("%s/routes/%d", app.adminPrefix, id), http.StatusSeeOther)
 		return
 	}
 
@@ -241,9 +241,9 @@ func (app *App) handleAdminCorridorUpdate(w http.ResponseWriter, r *http.Request
 		s := sessionFromCtx(r)
 		app.logAudit(s.AdminUserID, "update", "corridor", id, name)
 		app.invalidateIndexCache()
-		setFlash(w, "Corridor updated.")
+		setFlash(w, "Route updated.")
 	}
-	http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d", app.adminPrefix, id), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("%s/routes/%d", app.adminPrefix, id), http.StatusSeeOther)
 }
 
 func (app *App) handleAdminCorridorToggle(w http.ResponseWriter, r *http.Request) {
@@ -260,7 +260,7 @@ func (app *App) handleAdminCorridorToggle(w http.ResponseWriter, r *http.Request
 	s := sessionFromCtx(r)
 	app.logAudit(s.AdminUserID, "toggle", "corridor", id, "")
 	app.invalidateIndexCache()
-	http.Redirect(w, r, app.adminPrefix+"/corridors", http.StatusSeeOther)
+	http.Redirect(w, r, app.adminPrefix+"/routes", http.StatusSeeOther)
 }
 
 // ----- Corridor Media -----
@@ -332,7 +332,7 @@ func (app *App) handleAdminCorridorMediaAdd(w http.ResponseWriter, r *http.Reque
 	locationName := strings.TrimSpace(r.FormValue("location_name"))
 	lat, lon := parseOptionalLatLon(r.FormValue("lat"), r.FormValue("lon"))
 
-	redirectURL := fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id)
+	redirectURL := fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id)
 
 	switch sourceType {
 	case "url":
@@ -447,7 +447,7 @@ func (app *App) handleAdminCorridorMediaDelete(w http.ResponseWriter, r *http.Re
 	m, err := mediaByID(app.db, mid)
 	if err != nil || !m.CorridorID.Valid || m.CorridorID.Int64 != id {
 		setFlash(w, "Media not found.")
-		http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 		return
 	}
 	// Clear hero/thumbnail if this media was selected
@@ -459,7 +459,7 @@ func (app *App) handleAdminCorridorMediaDelete(w http.ResponseWriter, r *http.Re
 	app.logAudit(s.AdminUserID, "delete_media", "corridor", mid, "")
 	app.invalidateIndexCache()
 	setFlash(w, "Media deleted.")
-	http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 }
 
 func (app *App) handleAdminCorridorMediaHero(w http.ResponseWriter, r *http.Request) {
@@ -472,13 +472,13 @@ func (app *App) handleAdminCorridorMediaHero(w http.ResponseWriter, r *http.Requ
 	m, err := mediaByID(app.db, mid)
 	if err != nil || !m.CorridorID.Valid || m.CorridorID.Int64 != id {
 		setFlash(w, "Media not found.")
-		http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 		return
 	}
 	app.db.Exec(`UPDATE corridors SET hero_media_id=? WHERE id=?`, mid, id)
 	app.invalidateIndexCache()
 	setFlash(w, "Hero image set.")
-	http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 }
 
 func (app *App) handleAdminCorridorMediaThumbnail(w http.ResponseWriter, r *http.Request) {
@@ -491,13 +491,13 @@ func (app *App) handleAdminCorridorMediaThumbnail(w http.ResponseWriter, r *http
 	m, err := mediaByID(app.db, mid)
 	if err != nil || !m.CorridorID.Valid || m.CorridorID.Int64 != id {
 		setFlash(w, "Media not found.")
-		http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 		return
 	}
 	app.db.Exec(`UPDATE corridors SET thumbnail_media_id=? WHERE id=?`, mid, id)
 	app.invalidateIndexCache()
 	setFlash(w, "Thumbnail set.")
-	http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 }
 
 func (app *App) handleAdminCorridorMediaGeo(w http.ResponseWriter, r *http.Request) {
@@ -510,7 +510,7 @@ func (app *App) handleAdminCorridorMediaGeo(w http.ResponseWriter, r *http.Reque
 	m, err := mediaByID(app.db, mid)
 	if err != nil || !m.CorridorID.Valid || m.CorridorID.Int64 != id {
 		setFlash(w, "Media not found.")
-		http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 		return
 	}
 	lat, lon := parseOptionalLatLon(r.FormValue("lat"), r.FormValue("lon"))
@@ -524,7 +524,7 @@ func (app *App) handleAdminCorridorMediaGeo(w http.ResponseWriter, r *http.Reque
 	app.db.Exec(`UPDATE media SET latitude=?, longitude=?, location_name=?, location_source=? WHERE id=?`,
 		latN, lonN, locationName, locSrc, mid)
 	setFlash(w, "Location updated.")
-	http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 }
 
 func (app *App) handleAdminCorridorMediaCaption(w http.ResponseWriter, r *http.Request) {
@@ -537,7 +537,7 @@ func (app *App) handleAdminCorridorMediaCaption(w http.ResponseWriter, r *http.R
 	m, err := mediaByID(app.db, mid)
 	if err != nil || !m.CorridorID.Valid || m.CorridorID.Int64 != id {
 		setFlash(w, "Media not found.")
-		http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 		return
 	}
 	caption := strings.TrimSpace(r.FormValue("caption"))
@@ -546,7 +546,7 @@ func (app *App) handleAdminCorridorMediaCaption(w http.ResponseWriter, r *http.R
 	}
 	app.db.Exec(`UPDATE media SET caption=? WHERE id=?`, caption, mid)
 	setFlash(w, "Caption updated.")
-	http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 }
 
 func (app *App) handleAdminCorridorMediaTitle(w http.ResponseWriter, r *http.Request) {
@@ -559,14 +559,14 @@ func (app *App) handleAdminCorridorMediaTitle(w http.ResponseWriter, r *http.Req
 	m, err := mediaByID(app.db, mid)
 	if err != nil || !m.CorridorID.Valid || m.CorridorID.Int64 != id {
 		setFlash(w, "Media not found.")
-		http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 		return
 	}
 	title := sanitizeTitle(r.FormValue("title"))
 	app.db.Exec(`UPDATE media SET title=? WHERE id=?`, title, mid)
 	app.invalidateIndexCache()
 	setFlash(w, "Title updated.")
-	http.Redirect(w, r, fmt.Sprintf("%s/corridors/%d/media", app.adminPrefix, id), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("%s/routes/%d/media", app.adminPrefix, id), http.StatusSeeOther)
 }
 
 // ----- Trains -----
@@ -606,7 +606,7 @@ func (app *App) handleAdminTrainCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	corridorID, err := strconv.ParseInt(r.FormValue("corridor_id"), 10, 64)
 	if err != nil {
-		setFlash(w, "Invalid corridor.")
+		setFlash(w, "Invalid route.")
 		http.Redirect(w, r, app.adminPrefix+"/trains", http.StatusSeeOther)
 		return
 	}
@@ -1721,9 +1721,9 @@ func (app *App) handleAdminCorridorDeleteInactive(w http.ResponseWriter, r *http
 		s := sessionFromCtx(r)
 		app.logAudit(s.AdminUserID, "delete_inactive_corridors", "corridor", 0, fmt.Sprintf("%d deleted", n))
 		app.invalidateIndexCache()
-		setFlash(w, fmt.Sprintf("Deleted %d deactivated corridor(s).", n))
+		setFlash(w, fmt.Sprintf("Deleted %d deactivated route(s).", n))
 	}
-	http.Redirect(w, r, app.adminPrefix+"/corridors", http.StatusSeeOther)
+	http.Redirect(w, r, app.adminPrefix+"/routes", http.StatusSeeOther)
 }
 
 func (app *App) handleAdminSyncScheduleURLs(w http.ResponseWriter, r *http.Request) {
@@ -1741,7 +1741,7 @@ func (app *App) handleAdminSyncScheduleURLs(w http.ResponseWriter, r *http.Reque
 		data, err = fetchAmtrakRoutes()
 		if err != nil {
 			setFlash(w, "Could not fetch Amtrak route data: "+err.Error())
-			http.Redirect(w, r, app.adminPrefix+"/corridors", http.StatusSeeOther)
+			http.Redirect(w, r, app.adminPrefix+"/routes", http.StatusSeeOther)
 			return
 		}
 		amtrakRoutesMu.Lock()
@@ -1760,7 +1760,7 @@ func (app *App) handleAdminSyncScheduleURLs(w http.ResponseWriter, r *http.Reque
 	}
 	if err := json.Unmarshal(data, &fc); err != nil {
 		setFlash(w, "Could not parse Amtrak route data.")
-		http.Redirect(w, r, app.adminPrefix+"/corridors", http.StatusSeeOther)
+		http.Redirect(w, r, app.adminPrefix+"/routes", http.StatusSeeOther)
 		return
 	}
 
@@ -1800,8 +1800,8 @@ func (app *App) handleAdminSyncScheduleURLs(w http.ResponseWriter, r *http.Reque
 	}
 	s := sessionFromCtx(r)
 	app.logAudit(s.AdminUserID, "sync_schedule_urls", "corridor", 0, fmt.Sprintf("%d updated", updated))
-	setFlash(w, fmt.Sprintf("Synced Amtrak schedule URLs — %d corridor(s) updated.", updated))
-	http.Redirect(w, r, app.adminPrefix+"/corridors", http.StatusSeeOther)
+	setFlash(w, fmt.Sprintf("Synced Amtrak schedule URLs — %d route(s) updated.", updated))
+	http.Redirect(w, r, app.adminPrefix+"/routes", http.StatusSeeOther)
 }
 
 // locSourceStr returns "admin" if lat is set, else "unknown".
@@ -2067,6 +2067,18 @@ func (app *App) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) 
 		setAdminTheme(theme)
 		app.logAudit(s.AdminUserID, "update_admin_theme", "site_preferences", 1, theme)
 		setFlash(w, "Admin theme updated.")
+
+	case "user_approval":
+		autoConfirm := lastFormValue(r, "auto_approve_on_confirm") == "1"
+		autoVideo := lastFormValue(r, "auto_approve_on_video") == "1"
+		if _, err := app.db.Exec(`UPDATE site_preferences SET auto_approve_on_confirm=?, auto_approve_on_video=? WHERE id=1`,
+			boolToInt(autoConfirm), boolToInt(autoVideo)); err != nil {
+			setFlash(w, "Error saving user approval settings: "+err.Error())
+			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
+			return
+		}
+		app.logAudit(s.AdminUserID, "update_user_approval", "site_preferences", 1, "")
+		setFlash(w, "User approval settings saved.")
 
 	default:
 		setFlash(w, "Unknown action.")

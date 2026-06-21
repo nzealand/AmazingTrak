@@ -107,6 +107,17 @@ func (app *App) handleRegisterPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", 500)
 		return
 	}
+	// One account per email address. Only enforced for supplied (non-blank)
+	// emails — registering without an email stays allowed.
+	if email != "" {
+		if used, err := emailInUse(app.db, email, 0); err != nil {
+			http.Error(w, "Database error", 500)
+			return
+		} else if used {
+			fail("That email address is already registered. Try logging in, or reset your password if you've forgotten it.")
+			return
+		}
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -127,6 +138,12 @@ func (app *App) handleRegisterPost(w http.ResponseWriter, r *http.Request) {
 		username, email, string(hash), confirmToken, confirmToken,
 	)
 	if err != nil {
+		// Backstop for the unique-email index in case two registrations race
+		// past the check above between the SELECT and this INSERT.
+		if strings.Contains(err.Error(), "idx_users_email_unique") {
+			fail("That email address is already registered. Try logging in, or reset your password if you've forgotten it.")
+			return
+		}
 		fail("Could not create account: " + err.Error())
 		return
 	}
@@ -159,6 +176,7 @@ func (app *App) handleUserLoginForm(w http.ResponseWriter, r *http.Request) {
 	app.renderPublic(w, r, "login.html", publicPage{
 		Title: "Log in — " + getSiteName(),
 		Flash: getFlash(w, r),
+		Data:  map[string]any{"EmailEnabled": app.emailEnabled()},
 	})
 }
 
@@ -334,6 +352,13 @@ func (app *App) handleConfirmEmail(w http.ResponseWriter, r *http.Request) {
 	if u.Status == "pending" {
 		newStatus = "confirmed"
 	}
+	// If the admin has enabled auto-approve on confirmation, skip the manual
+	// review step and promote straight to auto_approved.
+	if newStatus == "confirmed" {
+		if prefs, err := getSitePrefs(app.db); err == nil && prefs.AutoApproveOnConfirm {
+			newStatus = "auto_approved"
+		}
+	}
 	app.db.Exec(`UPDATE users SET email_confirmed=1, confirm_token='', status=? WHERE id=?`, newStatus, u.ID)
 	setFlash(w, "Thanks — your email address is confirmed.")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -393,4 +418,144 @@ func (app *App) handleResendVerification(w http.ResponseWriter, r *http.Request)
 
 	setFlash(w, "A new verification email is on its way. Please check your inbox.")
 	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
+// handleForgotPasswordForm shows the "email me a reset link" form. When email is
+// disabled it explains the feature is unavailable rather than offering a form
+// that can't work — email-dependent features never block, they degrade.
+func (app *App) handleForgotPasswordForm(w http.ResponseWriter, r *http.Request) {
+	if u, _ := app.getUserSession(r); u != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	app.renderPublic(w, r, "forgot_password.html", publicPage{
+		Title: "Reset your password — " + getSiteName(),
+		Flash: getFlash(w, r),
+		Data:  map[string]any{"EmailEnabled": app.emailEnabled()},
+	})
+}
+
+// handleForgotPasswordPost issues a single-use reset token and emails the link.
+// To avoid revealing which addresses are registered it always reports the same
+// generic message, whether or not the email matched an account.
+func (app *App) handleForgotPasswordPost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", 400)
+		return
+	}
+	email := strings.TrimSpace(r.FormValue("email"))
+	const generic = "If an account with that email exists, we've sent a password reset link. Please check your inbox."
+
+	if !app.emailEnabled() {
+		setFlash(w, "Password reset by email isn't available right now. Please contact an admin for help getting back into your account.")
+		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+		return
+	}
+	if !validEmail(email) {
+		setFlash(w, "Please enter a valid email address.")
+		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+		return
+	}
+
+	// Throttle reset requests site-wide to curb enumeration and email-bombing.
+	// The same generic message is shown when throttled so the limit isn't a
+	// signal either.
+	ipHash := hashIP(r)
+	if blocked, _ := app.rlExceeded(3600, 10, ` AND action='password_reset'`); blocked {
+		setFlash(w, generic)
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	// Count every request toward the limit, matched or not.
+	app.recordActionRateLimit("password_reset", ipHash)
+
+	if u, err := userByEmail(app.db, email); err == nil {
+		token := newToken()
+		app.db.Exec(`UPDATE users SET reset_token=?, reset_sent_at=CURRENT_TIMESTAMP WHERE id=?`, token, u.ID)
+		go app.sendResetEmail(u.Email, token)
+	}
+
+	setFlash(w, generic)
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// handleResetPasswordForm validates the token from the emailed link and shows
+// the choose-a-new-password form. Invalid/expired tokens go back to the request
+// page with an explanation.
+func (app *App) handleResetPasswordForm(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if _, ok := app.validResetUser(token); !ok {
+		setFlash(w, "That password reset link is invalid or has expired. Please request a new one.")
+		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+		return
+	}
+	app.renderPublic(w, r, "reset_password.html", publicPage{
+		Title: "Choose a new password — " + getSiteName(),
+		Flash: getFlash(w, r),
+		Data:  map[string]any{"Token": token},
+	})
+}
+
+// handleResetPasswordPost sets the new password when the token is still valid,
+// then clears the token and logs out all existing sessions for that account.
+func (app *App) handleResetPasswordPost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", 400)
+		return
+	}
+	token := strings.TrimSpace(r.FormValue("token"))
+	password := r.FormValue("password")
+	confirm := r.FormValue("confirm_password")
+
+	u, ok := app.validResetUser(token)
+	if !ok {
+		setFlash(w, "That password reset link is invalid or has expired. Please request a new one.")
+		http.Redirect(w, r, "/forgot-password", http.StatusSeeOther)
+		return
+	}
+	fail := func(msg string) {
+		setFlash(w, msg)
+		// Hex tokens are URL-safe, so no escaping is needed.
+		http.Redirect(w, r, "/reset-password?token="+token, http.StatusSeeOther)
+	}
+	if len(password) < 8 {
+		fail("Password must be at least 8 characters.")
+		return
+	}
+	if password != confirm {
+		fail("Passwords do not match.")
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Server error", 500)
+		return
+	}
+	app.db.Exec(`UPDATE users SET password_hash=?, reset_token='', reset_sent_at=NULL WHERE id=?`, string(hash), u.ID)
+	// Invalidate existing sessions so a reset also locks out anyone who was using
+	// the old password.
+	app.db.Exec(`DELETE FROM user_sessions WHERE user_id=?`, u.ID)
+
+	setFlash(w, "Your password has been reset. Please log in with your new password.")
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// validResetUser returns the user for a non-empty, unexpired reset token.
+func (app *App) validResetUser(token string) (User, bool) {
+	if token == "" {
+		return User{}, false
+	}
+	u, err := userByResetToken(app.db, token)
+	if err != nil {
+		return User{}, false
+	}
+	var expired int
+	app.db.QueryRow(
+		`SELECT CASE WHEN reset_sent_at IS NULL OR reset_sent_at < datetime('now', ?) THEN 1 ELSE 0 END FROM users WHERE id=?`,
+		fmt.Sprintf("-%d hours", resetExpiryHours), u.ID,
+	).Scan(&expired)
+	if expired == 1 {
+		return User{}, false
+	}
+	return u, true
 }

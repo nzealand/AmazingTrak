@@ -241,7 +241,7 @@ func (app *App) handleCorridors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	app.renderPublic(w, r, "corridors.html", publicPage{
-		Title: "Corridors — AmazingTrak",
+		Title: "Routes — AmazingTrak",
 		Data:  corridors,
 	})
 }
@@ -736,7 +736,7 @@ func (app *App) handleCorridorCommentSubmit(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "Not available", 400)
 		return
 	}
-	app.submitComment(w, r, 0, corridor.ID, "/corridors/"+slug+"#comments")
+	app.submitComment(w, r, 0, corridor.ID, "/routes/"+slug+"#comments")
 }
 
 // submitComment is the shared comment pipeline for trains and corridors: exactly

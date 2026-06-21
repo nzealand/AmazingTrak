@@ -108,6 +108,27 @@ Visit the site: %s
 	app.sendMail(toEmail, "Confirm your "+getSiteName()+" email address", body)
 }
 
+// resetExpiryHours is how long a password-reset link stays valid. Kept short and
+// fixed (resets are more sensitive than email verification).
+const resetExpiryHours = 2
+
+// sendResetEmail sends a single-use password-reset link that expires after
+// resetExpiryHours.
+func (app *App) sendResetEmail(toEmail, token string) {
+	link := fmt.Sprintf("%s/reset-password?token=%s", app.baseURL, token)
+	body := fmt.Sprintf(`We received a request to reset your %s password.
+
+Choose a new password using the link below:
+
+%s
+
+This link expires in %d hours. If you didn't request a password reset you can safely ignore this email — your password won't change.
+
+Visit the site: %s
+`, getSiteName(), link, resetExpiryHours, app.baseURL)
+	app.sendMail(toEmail, "Reset your "+getSiteName()+" password", body)
+}
+
 // sendConfirmEmail is retained for compatibility; it delegates to sendVerifyEmail
 // using the configured expiry window.
 func (app *App) sendConfirmEmail(toEmail, token, baseURL string) {
@@ -150,10 +171,10 @@ All pending submissions: %s
 // Conductor role for a corridor.
 func (app *App) sendConductorRequestEmail(toEmail string, corridor Corridor, user User, baseURL string) {
 	conductorsURL := fmt.Sprintf("%s%s/conductors", app.baseURL, app.adminPrefix)
-	corridorURL := fmt.Sprintf("%s/corridors/%s", app.baseURL, corridor.Slug)
+	corridorURL := fmt.Sprintf("%s/routes/%s", app.baseURL, corridor.Slug)
 	body := fmt.Sprintf(`%s has requested to become the Conductor of %s.
 
-Corridor page: %s
+Route page: %s
 Review requests: %s
 `, user.Username, corridor.Name, corridorURL, conductorsURL)
 	app.sendMail(toEmail, fmt.Sprintf("Conductor request for %s", corridor.Name), body)

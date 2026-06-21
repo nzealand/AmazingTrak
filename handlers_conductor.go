@@ -55,7 +55,7 @@ func (app *App) handleConductorRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	corridorURL := "/corridors/" + slug
+	corridorURL := "/routes/" + slug
 
 	// Spammers are silently no-op'd.
 	if user.IsSpammer {
@@ -71,12 +71,12 @@ func (app *App) handleConductorRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if corridor.ConductorUserID.Valid {
-		setFlash(w, "This corridor already has a Conductor.")
+		setFlash(w, "This route already has a Conductor.")
 		http.Redirect(w, r, corridorURL, http.StatusSeeOther)
 		return
 	}
 	if pending, _ := pendingConductorRequest(app.db, corridor.ID, user.ID); pending {
-		setFlash(w, "You already have a pending request for this corridor.")
+		setFlash(w, "You already have a pending request for this route.")
 		http.Redirect(w, r, corridorURL, http.StatusSeeOther)
 		return
 	}
@@ -96,7 +96,7 @@ func (app *App) handleConductorRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	app.maybeNotifyPending()
 
-	setFlash(w, "Thanks! Your request to maintain this corridor has been submitted for review.")
+	setFlash(w, "Thanks! Your request to maintain this route has been submitted for review.")
 	http.Redirect(w, r, corridorURL, http.StatusSeeOther)
 }
 
@@ -121,7 +121,7 @@ func (app *App) conductorTrain(w http.ResponseWriter, r *http.Request) (Train, *
 		return Train{}, nil, "", false
 	}
 	if !ok {
-		setFlash(w, "You don't maintain this corridor.")
+		setFlash(w, "You don't maintain this route.")
 		http.Redirect(w, r, "/trains/"+slug, http.StatusSeeOther)
 		return Train{}, nil, "", false
 	}
@@ -187,7 +187,7 @@ func (app *App) handleConductorTrainEdit(w http.ResponseWriter, r *http.Request)
 	if corridorID != train.CorridorID {
 		conducts, err := isConductorOf(app.db, user.ID, corridorID)
 		if err != nil || !conducts {
-			setFlash(w, "You can only move this train to a corridor you maintain.")
+			setFlash(w, "You can only move this train to a route you maintain.")
 			http.Redirect(w, r, editURL, http.StatusSeeOther)
 			return
 		}
@@ -243,13 +243,13 @@ func (app *App) conductorCorridor(w http.ResponseWriter, r *http.Request) (Corri
 	}
 	user, csrf, ok := app.conductorGuard(r, corridor.ID)
 	if user == nil {
-		setFlash(w, "Please log in to manage this corridor.")
+		setFlash(w, "Please log in to manage this route.")
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return Corridor{}, nil, "", false
 	}
 	if !ok {
-		setFlash(w, "You don't maintain this corridor.")
-		http.Redirect(w, r, "/corridors/"+slug, http.StatusSeeOther)
+		setFlash(w, "You don't maintain this route.")
+		http.Redirect(w, r, "/routes/"+slug, http.StatusSeeOther)
 		return Corridor{}, nil, "", false
 	}
 	return corridor, user, csrf, true
@@ -286,7 +286,7 @@ func (app *App) handleConductorTrainCreate(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "Invalid CSRF token", 403)
 		return
 	}
-	newURL := "/corridors/" + corridor.Slug + "/trains/new"
+	newURL := "/routes/" + corridor.Slug + "/trains/new"
 	trainNumber := strings.TrimSpace(r.FormValue("train_number"))
 	displayName := strings.TrimSpace(r.FormValue("display_name"))
 	if trainNumber == "" || displayName == "" {
@@ -308,7 +308,7 @@ func (app *App) handleConductorTrainCreate(w http.ResponseWriter, r *http.Reques
 	newTrain, err := trainByID(app.db, id)
 	if err != nil {
 		setFlash(w, "Train created.")
-		http.Redirect(w, r, "/corridors/"+corridor.Slug, http.StatusSeeOther)
+		http.Redirect(w, r, "/routes/"+corridor.Slug, http.StatusSeeOther)
 		return
 	}
 	setFlash(w, "Train created — you can now edit its details.")

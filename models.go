@@ -182,6 +182,8 @@ type SitePreferences struct {
 	TrustedCommentRatePerDay  int
 	PendingNotifyLevel        int
 	AdminCompact              bool
+	AutoApproveOnConfirm      bool
+	AutoApproveOnVideo        bool
 }
 
 type StationTrain struct {
@@ -271,7 +273,7 @@ func (c *Comment) TargetName() string {
 
 func (c *Comment) TargetURL() string {
 	if c.IsCorridor() {
-		return "/corridors/" + c.CorridorSlug
+		return "/routes/" + c.CorridorSlug
 	}
 	return "/trains/" + c.TrainSlug
 }
@@ -302,11 +304,11 @@ func (u *AdminUser) PermissionLabel() string {
 	case 3:
 		return "L3 — Suggestions, Comments, Trains"
 	case 4:
-		return "L4 — Suggestions, Comments, Trains, Corridors"
+		return "L4 — Suggestions, Comments, Trains, Routes"
 	case 5:
-		return "L5 — Suggestions, Comments, Trains, Corridors, Settings"
+		return "L5 — Suggestions, Comments, Trains, Routes, Settings"
 	case 6:
-		return "L6 — Suggestions, Comments, Trains, Corridors, Settings, Users"
+		return "L6 — Suggestions, Comments, Trains, Routes, Settings, Users"
 	}
 	return fmt.Sprintf("L%d", u.PermissionLevel)
 }
@@ -874,11 +876,13 @@ func getSitePrefs(db *sql.DB) (SitePreferences, error) {
 	err := db.QueryRow(`SELECT id, default_theme, COALESCE(notification_email,''), COALESCE(rate_per_minute,1), COALESCE(rate_per_hour,5), COALESCE(rate_per_day,20), COALESCE(register_rate_per_hour,5), COALESCE(register_rate_per_day,20), COALESCE(comment_rate_per_hour,10), COALESCE(comment_rate_per_day,50), COALESCE(site_name,'AmazingTrak'), COALESCE(favicon_path,''), COALESCE(admin_theme,'default'),
 		COALESCE(sender_email,''), COALESCE(email_enabled,0), COALESCE(verify_expiry_hours,24),
 		COALESCE(trusted_rate_per_hour,30), COALESCE(trusted_rate_per_day,100), COALESCE(trusted_comment_rate_per_hour,30), COALESCE(trusted_comment_rate_per_day,100),
-		COALESCE(pending_notify_level,0), COALESCE(admin_compact,0) FROM site_preferences WHERE id=1`).
+		COALESCE(pending_notify_level,0), COALESCE(admin_compact,0),
+		COALESCE(auto_approve_on_confirm,0), COALESCE(auto_approve_on_video,1) FROM site_preferences WHERE id=1`).
 		Scan(&p.ID, &p.DefaultTheme, &p.NotificationEmail, &p.RatePerMinute, &p.RatePerHour, &p.RatePerDay, &p.RegisterRatePerHour, &p.RegisterRatePerDay, &p.CommentRatePerHour, &p.CommentRatePerDay, &p.SiteName, &p.FaviconPath, &p.AdminTheme,
 			&p.SenderEmail, &p.EmailEnabled, &p.VerifyExpiryHours,
 			&p.TrustedRatePerHour, &p.TrustedRatePerDay, &p.TrustedCommentRatePerHour, &p.TrustedCommentRatePerDay,
-			&p.PendingNotifyLevel, &p.AdminCompact)
+			&p.PendingNotifyLevel, &p.AdminCompact,
+			&p.AutoApproveOnConfirm, &p.AutoApproveOnVideo)
 	if err == sql.ErrNoRows {
 		return SitePreferences{DefaultTheme: "auto", RatePerMinute: 1, RatePerHour: 5, RatePerDay: 20, RegisterRatePerHour: 5, RegisterRatePerDay: 20, CommentRatePerHour: 10, CommentRatePerDay: 50, SiteName: "AmazingTrak", AdminTheme: "default",
 			VerifyExpiryHours: 24, TrustedRatePerHour: 30, TrustedRatePerDay: 100, TrustedCommentRatePerHour: 30, TrustedCommentRatePerDay: 100}, nil
@@ -933,6 +937,25 @@ func userByUsername(db *sql.DB, username string) (User, error) {
 
 func userByConfirmToken(db *sql.DB, token string) (User, error) {
 	return scanUser(db.QueryRow(`SELECT `+userSelectCols+` FROM users WHERE confirm_token=? AND confirm_token != ''`, token))
+}
+
+// userByEmail looks up a user by email address, case-insensitively. Blank
+// emails never match (so anonymous/email-less accounts are never returned).
+func userByEmail(db *sql.DB, email string) (User, error) {
+	return scanUser(db.QueryRow(`SELECT `+userSelectCols+` FROM users WHERE email != '' AND lower(email)=lower(?)`, email))
+}
+
+// emailInUse reports whether a non-empty email is already registered to a
+// different account (case-insensitive). Pass exceptID=0 for new registrations.
+func emailInUse(db *sql.DB, email string, exceptID int64) (bool, error) {
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE email != '' AND lower(email)=lower(?) AND id != ?`, email, exceptID).Scan(&n)
+	return n > 0, err
+}
+
+// userByResetToken returns the user holding the given non-empty reset token.
+func userByResetToken(db *sql.DB, token string) (User, error) {
+	return scanUser(db.QueryRow(`SELECT `+userSelectCols+` FROM users WHERE reset_token=? AND reset_token != ''`, token))
 }
 
 // allUsers returns every registered user with a count of their submissions.

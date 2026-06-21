@@ -83,12 +83,12 @@
 
   <section>
     <h2 class="section-heading" style="margin-top:0">📹 Trains Needing Videos</h2>
-    <p style="font-size:.85rem;color:var(--muted);margin-bottom:.85rem">Corridors with the most trains that have no video footage yet.</p>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:.85rem">Routes with the most trains that have no video footage yet.</p>
     {{if $d.MissingCorridors}}
     <div style="display:flex;flex-direction:column;gap:.6rem">
       {{range $d.MissingCorridors}}
       <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem .6rem;background:var(--card-bg);border:1px solid var(--border);border-radius:6px">
-        <a href="/corridors/{{.CorridorSlug}}" style="font-weight:600">{{.CorridorName}}</a>
+        <a href="/routes/{{.CorridorSlug}}" style="font-weight:600">{{.CorridorName}}</a>
         <span style="font-size:.82rem;font-weight:600;color:#ef4444">{{.MissingCount}} without video</span>
       </div>
       {{end}}

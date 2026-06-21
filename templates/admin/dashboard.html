@@ -3,7 +3,7 @@
 <div class="stats-grid">
   <div class="stat-card">
     <div class="stat-num">{{$d.CorridorCount}}</div>
-    <div class="stat-label">Corridors</div>
+    <div class="stat-label">Routes</div>
   </div>
   <div class="stat-card">
     <div class="stat-num">{{$d.TrainCount}}</div>
@@ -31,7 +31,7 @@
   </div>
 </div>
 <div class="btn-group">
-  <a href="{{.AdminPrefix}}/corridors" class="btn btn-secondary">Manage Corridors</a>
+  <a href="{{.AdminPrefix}}/routes" class="btn btn-secondary">Manage Routes</a>
   <a href="{{.AdminPrefix}}/trains" class="btn btn-secondary">Manage Trains</a>
   <a href="{{.AdminPrefix}}/suggestions" class="btn btn-secondary">Review Suggestions
     {{if gt $d.PendingCount 0}}<span style="background:#dc2626;color:#fff;border-radius:999px;padding:0 .45rem;font-size:.75rem;margin-left:.25rem">{{$d.PendingCount}}</span>{{end}}

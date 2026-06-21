@@ -4,7 +4,7 @@
   <form method="post" action="{{.AdminPrefix}}/trains/new" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end;flex:1">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <div class="form-group" style="margin:0;flex:1;min-width:180px">
-      <label class="form-label" style="font-size:.8rem">Corridor</label>
+      <label class="form-label" style="font-size:.8rem">Route</label>
       <select class="form-select" name="corridor_id" required>
         {{range $d.Corridors}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
       </select>
@@ -29,7 +29,7 @@
     <tr>
       <th data-sort="train" style="cursor:pointer">Train <span class="sort-ind">⬍</span></th>
       <th data-sort="number" style="cursor:pointer">Number <span class="sort-ind">⬍</span></th>
-      <th data-sort="corridor" style="cursor:pointer">Corridor <span class="sort-ind">⬍</span></th>
+      <th data-sort="corridor" style="cursor:pointer">Route <span class="sort-ind">⬍</span></th>
       <th data-sort="media" style="cursor:pointer">Media <span class="sort-ind">⬍</span></th>
       <th data-sort="thumb" style="cursor:pointer">Thumb <span class="sort-ind">⬍</span></th>
       <th data-sort="video" style="cursor:pointer">Video <span class="sort-ind">⬍</span></th>

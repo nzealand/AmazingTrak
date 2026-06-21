@@ -1,16 +1,16 @@
 {{define "admin_content"}}
 <div style="margin-bottom:1.25rem;display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
-  <form method="post" action="{{.AdminPrefix}}/corridors/new" style="display:flex;gap:.5rem;align-items:center;flex:1">
+  <form method="post" action="{{.AdminPrefix}}/routes/new" style="display:flex;gap:.5rem;align-items:center;flex:1">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-    <input class="form-input" type="text" name="name" placeholder="New corridor name" required style="max-width:250px">
+    <input class="form-input" type="text" name="name" placeholder="New route name" required style="max-width:250px">
     <input class="form-input" type="text" name="region" placeholder="Region (optional)" style="max-width:160px">
-    <button class="btn btn-primary btn-sm" type="submit">+ Add Corridor</button>
+    <button class="btn btn-primary btn-sm" type="submit">+ Add Route</button>
   </form>
-  <form method="post" action="{{.AdminPrefix}}/corridors/sync-schedule-urls" onsubmit="return confirm('Fetch Amtrak schedule URLs from route data and populate any corridors that are missing one?')">
+  <form method="post" action="{{.AdminPrefix}}/routes/sync-schedule-urls" onsubmit="return confirm('Fetch Amtrak schedule URLs from route data and populate any routes that are missing one?')">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <button class="btn btn-sm btn-secondary" type="submit">Sync Amtrak Schedule URLs</button>
   </form>
-  <form method="post" action="{{.AdminPrefix}}/corridors/delete-inactive" onsubmit="return confirm('Permanently delete all deactivated corridors, their trains, and all associated media?')">
+  <form method="post" action="{{.AdminPrefix}}/routes/delete-inactive" onsubmit="return confirm('Permanently delete all deactivated routes, their trains, and all associated media?')">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <button class="btn btn-sm btn-danger" type="submit">Delete All Deactivated</button>
   </form>
@@ -38,7 +38,7 @@
         data-thumb="{{if .ThumbnailMediaID.Valid}}1{{else}}0{{end}}"
         data-hero="{{if .HeroMediaID.Valid}}1{{else}}0{{end}}"
         data-status="{{if .IsActive}}1{{else}}0{{end}}">
-      <td><a href="{{$.AdminPrefix}}/corridors/{{.ID}}">{{.Name}}</a></td>
+      <td><a href="{{$.AdminPrefix}}/routes/{{.ID}}">{{.Name}}</a></td>
       <td>{{.Region}}</td>
       <td>{{.TrainCount}}</td>
       <td>{{.MediaCount}}</td>
@@ -47,9 +47,9 @@
       <td>{{if .IsActive}}Active{{else}}Inactive{{end}}</td>
       <td>
         <div class="btn-group">
-          <a href="{{$.AdminPrefix}}/corridors/{{.ID}}" class="btn btn-sm btn-secondary">Edit</a>
-          <a href="{{$.AdminPrefix}}/corridors/{{.ID}}/media" class="btn btn-sm btn-secondary">Media</a>
-          <form method="post" action="{{$.AdminPrefix}}/corridors/{{.ID}}/toggle">
+          <a href="{{$.AdminPrefix}}/routes/{{.ID}}" class="btn btn-sm btn-secondary">Edit</a>
+          <a href="{{$.AdminPrefix}}/routes/{{.ID}}/media" class="btn btn-sm btn-secondary">Media</a>
+          <form method="post" action="{{$.AdminPrefix}}/routes/{{.ID}}/toggle">
             <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
             <button class="btn btn-sm btn-secondary" type="submit">{{if .IsActive}}Deactivate{{else}}Activate{{end}}</button>
           </form>

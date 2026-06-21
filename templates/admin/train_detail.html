@@ -29,7 +29,7 @@
       <input class="form-input" type="text" name="train_number" value="{{$d.Train.TrainNumber}}" required>
     </div>
     <div class="form-group">
-      <label class="form-label">Corridor</label>
+      <label class="form-label">Route</label>
       <select class="form-select" name="corridor_id">
         {{range $d.Corridors}}
         <option value="{{.ID}}" {{if eq $d.Train.CorridorID .ID}}selected{{end}}>{{.Name}}</option>

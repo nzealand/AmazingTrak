@@ -3,12 +3,12 @@
 {{$d := .Data}}
 <div class="container" style="padding-top:1.5rem;max-width:760px">
   <nav style="font-size:.85rem;color:var(--muted);margin-bottom:.75rem">
-    <a href="/corridors/{{$d.Train.CorridorSlug}}">{{$d.Train.CorridorName}}</a> ›
+    <a href="/routes/{{$d.Train.CorridorSlug}}">{{$d.Train.CorridorName}}</a> ›
     <a href="/trains/{{$d.Train.Slug}}">{{$d.Train.DisplayName}}</a> › Edit
   </nav>
   <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
     <h1>Edit Train</h1>
-    <span style="font-size:.85rem;color:var(--muted)">You maintain the {{$d.Train.CorridorName}} corridor.</span>
+    <span style="font-size:.85rem;color:var(--muted)">You maintain the {{$d.Train.CorridorName}} route.</span>
   </div>
 
   {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
@@ -41,13 +41,13 @@
       <input class="form-input" type="text" id="train_number" name="train_number" value="{{$d.Train.TrainNumber}}" required>
     </div>
     <div class="form-group">
-      <label class="form-label" for="corridor_id">Corridor</label>
+      <label class="form-label" for="corridor_id">Route</label>
       <select class="form-select" id="corridor_id" name="corridor_id">
         {{range $d.Corridors}}
         <option value="{{.ID}}" {{if eq $d.Train.CorridorID .ID}}selected{{end}}>{{.Name}}</option>
         {{end}}
       </select>
-      <div class="form-hint">You can only move this train to a corridor you maintain.</div>
+      <div class="form-hint">You can only move this train to a route you maintain.</div>
     </div>
     <div class="form-group">
       <label class="form-label" for="sort_order">Sort Order</label>

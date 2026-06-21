@@ -3,13 +3,13 @@
 {{$d := .Data}}
 <div class="container" style="padding-top:1.5rem;max-width:820px">
   <nav style="font-size:.85rem;color:var(--muted);margin-bottom:.75rem">
-    <a href="/corridors/{{$d.Train.CorridorSlug}}">{{$d.Train.CorridorName}}</a> ›
+    <a href="/routes/{{$d.Train.CorridorSlug}}">{{$d.Train.CorridorName}}</a> ›
     <a href="/trains/{{$d.Train.Slug}}">{{$d.Train.DisplayName}}</a> ›
     <a href="/trains/{{$d.Train.Slug}}/edit">Edit</a> › Schedule
   </nav>
   <div class="page-header">
     <h1>Route &amp; Schedule</h1>
-    <p class="subtitle">Every station in the {{$d.Train.CorridorName}} corridor is listed below. Enter arrival/departure times for the stations this train actually stops at — leave a station blank if it doesn't stop there.</p>
+    <p class="subtitle">Every station in the {{$d.Train.CorridorName}} route is listed below. Enter arrival/departure times for the stations this train actually stops at — leave a station blank if it doesn't stop there.</p>
   </div>
 
   {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
@@ -20,7 +20,7 @@
   </div>
 
   {{if not $d.Stops}}
-  <p style="color:var(--muted);padding:2rem 0">This corridor has no stations yet. Ask an admin to add stations to the corridor before building a schedule.</p>
+  <p style="color:var(--muted);padding:2rem 0">This route has no stations yet. Ask an admin to add stations to the route before building a schedule.</p>
   {{else}}
   <form method="post" action="/trains/{{$d.Train.Slug}}/edit/stops">
     <input type="hidden" name="csrf_token" value="{{.UserCSRF}}">

@@ -19,7 +19,7 @@
   {{range $d.Entries}}
   <div style="margin-bottom:2.5rem">
     <h2 class="section-heading">
-      <a href="/corridors/{{.Corridor.Slug}}">{{.Corridor.Name}}</a>
+      <a href="/routes/{{.Corridor.Slug}}">{{.Corridor.Name}}</a>
     </h2>
     {{if .Trains}}
     <ol class="stop-list stop-list--schedule" style="max-width:480px">
@@ -43,7 +43,7 @@
       {{end}}
     </ol>
     {{else}}
-    <p style="color:var(--muted);font-size:.9rem">No active trains scheduled for this corridor.</p>
+    <p style="color:var(--muted);font-size:.9rem">No active trains scheduled for this route.</p>
     {{end}}
   </div>
   {{end}}

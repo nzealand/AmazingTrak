@@ -13,6 +13,9 @@ import (
 // an admin endorses their content (adds a rarity, approves their video), unless
 // the user is already manually approved.
 func (app *App) markUserApproved(userID int64) {
+	if prefs, err := getSitePrefs(app.db); err != nil || !prefs.AutoApproveOnVideo {
+		return
+	}
 	app.db.Exec(
 		`UPDATE users SET status='auto_approved' WHERE id=? AND status NOT IN ('approved','auto_approved')`,
 		userID,
@@ -348,6 +351,48 @@ func (app *App) handleAdminUserSubmissions(w http.ResponseWriter, r *http.Reques
 		CSRFToken: s.CSRFToken,
 		Data:      subsData{User: &u, Submissions: subs},
 	})
+}
+
+// handleAdminUserResetPassword sets a new password for a registered user.
+// The admin types the new password directly in the admin panel — no email link
+// is issued, so this works regardless of whether email is configured.
+func (app *App) handleAdminUserResetPassword(w http.ResponseWriter, r *http.Request) {
+	if !app.checkCSRF(r) {
+		http.Error(w, "Invalid CSRF token", 403)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid user ID", 400)
+		return
+	}
+	password := r.FormValue("new_password")
+	if len(password) < 8 {
+		setFlash(w, "Password must be at least 8 characters.")
+		http.Redirect(w, r, r.Referer(), http.StatusSeeOther)
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Server error", 500)
+		return
+	}
+	res, err := app.db.Exec(`UPDATE users SET password_hash=?, reset_token='', reset_sent_at=NULL WHERE id=?`, string(hash), id)
+	if err != nil {
+		setFlash(w, "Error updating password: "+err.Error())
+		http.Redirect(w, r, r.Referer(), http.StatusSeeOther)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	// Invalidate all sessions so the new password takes effect immediately.
+	app.db.Exec(`DELETE FROM user_sessions WHERE user_id=?`, id)
+	s := sessionFromCtx(r)
+	app.logAudit(s.AdminUserID, "reset_user_password", "user", id, "")
+	setFlash(w, "Password reset and all sessions invalidated.")
+	http.Redirect(w, r, app.adminPrefix+"/users", http.StatusSeeOther)
 }
 
 func (app *App) handleAdminUserAnonymize(w http.ResponseWriter, r *http.Request) {

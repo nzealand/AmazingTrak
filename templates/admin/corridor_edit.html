@@ -1,11 +1,11 @@
 {{define "admin_content"}}
 {{$d := .Data}}
 <div style="display:flex;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap">
-  <a href="{{.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/media" class="btn btn-secondary">Manage Media</a>
-  <a href="/corridors/{{$d.Corridor.Slug}}" target="_blank" class="btn btn-secondary">View Public Page ↗</a>
+  <a href="{{.AdminPrefix}}/routes/{{$d.Corridor.ID}}/media" class="btn btn-secondary">Manage Media</a>
+  <a href="/routes/{{$d.Corridor.Slug}}" target="_blank" class="btn btn-secondary">View Public Page ↗</a>
 </div>
 
-<form method="post" action="{{.AdminPrefix}}/corridors/{{$d.Corridor.ID}}" class="admin-form">
+<form method="post" action="{{.AdminPrefix}}/routes/{{$d.Corridor.ID}}" class="admin-form">
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
   <div class="form-row">
@@ -16,7 +16,7 @@
     <div class="form-group">
       <label class="form-label">Slug *</label>
       <input class="form-input" type="text" name="slug" value="{{$d.Corridor.Slug}}" required>
-      <div class="form-hint">URL: /corridors/{slug}</div>
+      <div class="form-hint">URL: /routes/{slug}</div>
     </div>
   </div>
 
@@ -55,12 +55,12 @@
   <div class="form-group">
     <label class="form-label">Amtrak Schedule URL <span style="font-size:.8rem;color:var(--muted)">(optional)</span></label>
     <input class="form-input" type="url" name="schedule_url" value="{{$d.Corridor.ScheduleURL}}" placeholder="https://www.amtrak.com/...">
-    <div class="form-hint">Shown on the corridor page and map popup.</div>
+    <div class="form-hint">Shown on the route page and map popup.</div>
   </div>
 
   <div class="btn-group" style="margin-top:.5rem">
     <button class="btn btn-primary" type="submit">Save Changes</button>
-    <a href="{{.AdminPrefix}}/corridors" class="btn btn-secondary">Back to Corridors</a>
+    <a href="{{.AdminPrefix}}/routes" class="btn btn-secondary">Back to Routes</a>
   </div>
 </form>
 
@@ -69,13 +69,13 @@
   <span style="font-size:.9rem">Current:
     {{if $d.Corridor.ConductorUsername}}<a href="/users/{{$d.Corridor.ConductorUsername}}" target="_blank">{{$d.Corridor.ConductorUsername}}</a>{{else}}<span style="color:var(--muted)">none</span>{{end}}
   </span>
-  <form method="post" action="{{.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/conductor/set" style="display:flex;gap:.4rem;align-items:center">
+  <form method="post" action="{{.AdminPrefix}}/routes/{{$d.Corridor.ID}}/conductor/set" style="display:flex;gap:.4rem;align-items:center">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input class="form-input" type="text" name="username" placeholder="username" required style="width:11rem;padding:.3rem .5rem;font-size:.85rem">
     <button class="btn btn-sm btn-primary" type="submit">Set</button>
   </form>
   {{if $d.Corridor.ConductorUsername}}
-  <form method="post" action="{{.AdminPrefix}}/corridors/{{$d.Corridor.ID}}/conductor/remove">
+  <form method="post" action="{{.AdminPrefix}}/routes/{{$d.Corridor.ID}}/conductor/remove">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <button class="btn btn-sm btn-danger" type="submit">Remove</button>
   </form>
@@ -84,7 +84,7 @@
 <p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem">Review pending requests and use the searchable picker on the <a href="{{.AdminPrefix}}/conductors">Conductors page</a>.</p>
 
 {{if $d.Trains}}
-<h3 class="section-heading" style="margin-top:2rem">Trains in this Corridor</h3>
+<h3 class="section-heading" style="margin-top:2rem">Trains in this Route</h3>
 <table class="admin-table">
   <thead><tr><th>#</th><th>Display Name</th><th>Direction</th><th>Media</th><th>Actions</th></tr></thead>
   <tbody>

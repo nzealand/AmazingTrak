@@ -1,13 +1,13 @@
-{{define "title"}}Corridors — {{siteName}}{{end}}
+{{define "title"}}Routes — {{siteName}}{{end}}
 {{define "content"}}
 <div class="container">
   <div class="page-header">
-    <h1>Corridors</h1>
-    <p class="subtitle">Browse Amtrak corridor services across the country.</p>
+    <h1>Routes</h1>
+    <p class="subtitle">Browse Amtrak route services across the country.</p>
   </div>
   <div class="cards-grid">
     {{range .Data}}
-    <a href="/corridors/{{.Slug}}" style="text-decoration:none;color:inherit">
+    <a href="/routes/{{.Slug}}" style="text-decoration:none;color:inherit">
       <div class="card">
         {{if .HeroImageURL}}
           <img class="card-thumb" src="{{.HeroImageURL}}" alt="{{.Name}}" loading="lazy">

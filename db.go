@@ -87,7 +87,20 @@ func runMigrations(db *sql.DB) error {
 	db.Exec(`ALTER TABLE site_preferences ADD COLUMN admin_compact INTEGER NOT NULL DEFAULT 0`)
 	// When the current email-verification token was last sent (for expiry).
 	db.Exec(`ALTER TABLE users ADD COLUMN confirm_sent_at TEXT`)
+	// User auto-approval policy toggles.
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN auto_approve_on_confirm INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN auto_approve_on_video INTEGER NOT NULL DEFAULT 1`)
+	// Password reset: a single-use token + timestamp, kept separate from the
+	// email-confirmation token so resetting a password never disturbs verification.
+	db.Exec(`ALTER TABLE users ADD COLUMN reset_token TEXT NOT NULL DEFAULT ''`)
+	db.Exec(`ALTER TABLE users ADD COLUMN reset_sent_at TEXT`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token)`)
+	// One account per email address (case-insensitive), for non-empty addresses
+	// only — blank emails stay allowed and unconstrained. Best-effort: if legacy
+	// duplicate emails predate this index it simply won't be created, and the
+	// registration handler's own check still blocks new duplicates.
+	db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(lower(email)) WHERE email != ''`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_suggestions_user ON suggestions(user_id)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_media_train_type ON media(train_id, media_type)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_media_corridor_type ON media(corridor_id, media_type)`)
