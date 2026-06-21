@@ -36,7 +36,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
-<script>
+<script nonce="{{.Nonce}}">
 function jsSlugify(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
@@ -52,7 +52,7 @@ function findCorridorSlug(name) {
   return CORRIDOR_BY_NORM[norm] || null;
 }
 </script>
-<script>
+<script nonce="{{.Nonce}}">
 (function() {
   var COLORS = [
     '#e63946','#2a9d8f','#457b9d','#f4a261','#6a4c93',

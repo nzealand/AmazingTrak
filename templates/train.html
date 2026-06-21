@@ -302,7 +302,7 @@
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
 <script src="/static/map.js"></script>
 {{end}}
-<script>
+<script nonce="{{.Nonce}}">
 (function() {
   var btn = document.getElementById('copy-link-btn');
   if (!btn) return;

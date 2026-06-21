@@ -51,7 +51,7 @@
           <div style="font-size:.72rem;color:var(--muted);margin-top:.25rem">teal</div>
         </label>
       </div>
-      <script>
+      <script nonce="{{.Nonce}}">
       document.querySelectorAll('[name="admin_theme"]').forEach(function(inp){
         inp.addEventListener('change',function(){
           document.querySelectorAll('[name="admin_theme"]').forEach(function(i){

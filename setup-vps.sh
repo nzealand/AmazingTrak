@@ -236,6 +236,10 @@ LOGROTATE
 
 # ── nginx ─────────────────────────────────────────────────────────────────────
 info "Configuring nginx…"
+# Suppress nginx version from Server header (goes in the http block of nginx.conf)
+if ! grep -q "server_tokens off" /etc/nginx/nginx.conf; then
+  sed -i '/keepalive_timeout/a\\    server_tokens off;' /etc/nginx/nginx.conf
+fi
 cat > "/etc/nginx/sites-available/${SERVICE}" <<NGINX
 # Rate-limit zones (defined at http context level — placed in site file for
 # self-containedness; nginx loads these before the server block).
@@ -250,19 +254,17 @@ server {
     # Max upload size (matches app's 32 MB body limit)
     client_max_body_size 32M;
 
-    # Security headers
+    # Security headers (Go app sets CSP with per-request nonce; nginx headers are
+    # supplemental. HSTS is set only on the HTTPS block added by certbot.)
     add_header X-Content-Type-Options  "nosniff"          always;
     add_header X-Frame-Options         "SAMEORIGIN"       always;
-    add_header Referrer-Policy         "same-origin"      always;
-    add_header X-XSS-Protection        "1; mode=block"    always;
+    add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy      "geolocation=(), camera=(), microphone=()" always;
-    # Tight CSP: inline styles/scripts are used by the app, so unsafe-inline is
-    # required; external resources are blocked unless explicitly listed.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.youtube.com https://player.vimeo.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; frame-src https://www.youtube.com https://player.vimeo.com; object-src 'none'; base-uri 'self';" always;
 
     # Static uploads — serve directly from disk without hitting Go
     location /uploads/ {
         alias ${DATA_DIR}/uploads/;
+        autoindex off;
         expires 30d;
         add_header Cache-Control "public, immutable";
         add_header X-Content-Type-Options "nosniff" always;
@@ -318,6 +320,13 @@ if [[ "${SETUP_SSL,,}" == "y" ]]; then
   certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos \
     --email "${NOTIFY_EMAIL:-admin@${DOMAIN}}" --redirect \
     || warn "certbot failed — run 'certbot --nginx -d ${DOMAIN}' manually after DNS propagates."
+  # Add HSTS to the HTTPS server block that certbot created (if not already there).
+  SITE_CONF="/etc/nginx/sites-available/${SERVICE}"
+  if ! grep -q "Strict-Transport-Security" "$SITE_CONF"; then
+    sed -i '/listen 443/a\\    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;' \
+      "$SITE_CONF"
+    nginx -t && systemctl reload nginx
+  fi
 fi
 
 # ── firewall ─────────────────────────────────────────────────────────────────

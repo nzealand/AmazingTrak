@@ -20,6 +20,7 @@ type publicPage struct {
 	CurrentUser *User
 	UserCSRF    string
 	FormValues  map[string]string
+	Nonce       string
 }
 
 func (app *App) handleIndex(w http.ResponseWriter, r *http.Request) {

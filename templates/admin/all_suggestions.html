@@ -93,7 +93,7 @@
 {{else}}
 <p style="color:var(--muted);padding:2rem 0">No suggestions{{if $d.StatusFilter}} with status "{{$d.StatusFilter}}"{{end}}.</p>
 {{end}}
-<script>
+<script nonce="{{.Nonce}}">
 function toggleSpamMenu(btn) {
   var menu = btn.nextElementSibling;
   var isOpen = menu.style.display !== 'none';

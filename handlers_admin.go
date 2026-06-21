@@ -209,6 +209,9 @@ func (app *App) handleAdminCorridorUpdate(w http.ResponseWriter, r *http.Request
 	description := strings.TrimSpace(r.FormValue("description"))
 	sqSummary := strings.TrimSpace(r.FormValue("service_quality_summary"))
 	scheduleURL := strings.TrimSpace(r.FormValue("schedule_url"))
+	if scheduleURL != "" && !strings.HasPrefix(scheduleURL, "https://") && !strings.HasPrefix(scheduleURL, "http://") {
+		scheduleURL = ""
+	}
 
 	if name == "" || slug == "" {
 		setFlash(w, "Name and slug are required.")

@@ -2,15 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -181,6 +184,8 @@ type App struct {
 	indexCacheHTML  []byte
 }
 
+type nonceKey struct{}
+
 type adminPage struct {
 	Title       string
 	Flash       string
@@ -190,6 +195,7 @@ type adminPage struct {
 	Authed      bool // an admin is logged in (nav section links shown)
 	IsCentral   bool // logged-in admin is the central admin
 	PermLevel   int  // cumulative permission level of the logged-in admin (0 = central/all)
+	Nonce       string
 }
 
 var siteBaseURL string
@@ -469,6 +475,9 @@ func (app *App) withCurrentUser(r *http.Request, data interface{}) interface{} {
 		pp.CurrentUser = u
 		pp.UserCSRF = csrf
 	}
+	if nonce, ok := r.Context().Value(nonceKey{}).(string); ok {
+		pp.Nonce = nonce
+	}
 	return pp
 }
 
@@ -502,6 +511,9 @@ func (app *App) renderAdmin(w http.ResponseWriter, r *http.Request, page string,
 		data.PermLevel = au.PermissionLevel
 		data.IsCentral = au.IsCentral()
 	}
+	if nonce, ok := r.Context().Value(nonceKey{}).(string); ok {
+		data.Nonce = nonce
+	}
 	tmpl, ok := app.adminTemplates[page]
 	if !ok {
 		log.Printf("admin template not found: %s", page)
@@ -529,17 +541,32 @@ func (app *App) limitBody(next http.Handler) http.Handler {
 	})
 }
 
+func newNonce() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
 func (app *App) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nonce := newNonce()
+		ctx := context.WithValue(r.Context(), nonceKey{}, nonce)
+
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		if app.secureCookies {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 
+		n := "'nonce-" + nonce + "'"
 		if strings.HasPrefix(r.URL.Path, app.adminCookiePath+"/") || r.URL.Path == app.adminCookiePath {
 			w.Header().Set("Content-Security-Policy",
 				"default-src 'self'; "+
-					"script-src 'self' 'unsafe-inline'; "+
+					"script-src 'self' "+n+"; "+
 					"style-src 'self' 'unsafe-inline'; "+
 					"img-src 'self' https: data: blob:; "+
 					"frame-src https://www.youtube.com https://player.vimeo.com; "+
@@ -547,7 +574,7 @@ func (app *App) securityHeaders(next http.Handler) http.Handler {
 		} else {
 			w.Header().Set("Content-Security-Policy",
 				"default-src 'self'; "+
-					"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
+					"script-src 'self' "+n+" https://cdn.jsdelivr.net; "+
 					"style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "+
 					"img-src 'self' https://tile.openstreetmap.org https://*.tile.openstreetmap.org "+
 					"https://upload.wikimedia.org "+
@@ -556,7 +583,7 @@ func (app *App) securityHeaders(next http.Handler) http.Handler {
 					"frame-src https://www.youtube.com https://player.vimeo.com; "+
 					"object-src 'none';")
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -690,9 +717,9 @@ func main() {
 		staticFS.ServeHTTP(w, r)
 	}))
 
-	// Uploaded files from disk
+	// Uploaded files from disk — directory listing disabled.
 	mux.Handle("GET /uploads/", http.StripPrefix("/uploads/",
-		http.FileServer(http.Dir(uploadsDir))))
+		noListFileServer(http.Dir(uploadsDir))))
 
 	// Health check
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -877,6 +904,23 @@ func (app *App) handleFavicon(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(app.uploadsDir, path))
 }
 
+// noListFileServer wraps an http.FileSystem to return 404 for directory requests,
+// preventing directory listing while still serving individual files.
+func noListFileServer(fs http.FileSystem) http.Handler {
+	fserver := http.FileServer(fs)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, err := fs.Open(r.URL.Path)
+		if err == nil {
+			defer f.Close()
+			if stat, err := f.Stat(); err == nil && stat.IsDir() {
+				http.NotFound(w, r)
+				return
+			}
+		}
+		fserver.ServeHTTP(w, r)
+	})
+}
+
 func (app *App) handleThemeToggle(w http.ResponseWriter, r *http.Request) {
 	theme := r.FormValue("theme")
 	if theme != "light" && theme != "dark" && theme != "auto" {
@@ -890,9 +934,13 @@ func (app *App) handleThemeToggle(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: false,
 		SameSite: http.SameSiteLaxMode,
 	})
-	ref := r.Header.Get("Referer")
-	if ref == "" {
-		ref = "/"
+	// Redirect back to the referring page, but only if it's the same host.
+	// This prevents the Referer header from being used as an open redirect.
+	ref := "/"
+	if raw := r.Header.Get("Referer"); raw != "" {
+		if u, err := url.Parse(raw); err == nil && (u.Host == "" || u.Host == r.Host) {
+			ref = u.RequestURI()
+		}
 	}
 	http.Redirect(w, r, ref, http.StatusSeeOther)
 }
