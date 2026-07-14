@@ -246,6 +246,14 @@ footer { background: var(--card-bg); border-top: 1px solid var(--border); color:
 [data-theme=dark] .status-approved { background: #0d2e1f; color: #3fb950; }
 [data-theme=dark] .status-rejected { background: #2d0808; color: #f87171; }
 
+/* ── Live train status (train detail page; colors match map markers) ── */
+.status-ontime   { background: #d1fae5; color: #1a5c2c; }
+.status-late     { background: #fdecd3; color: #8a4c0f; }
+.status-verylate { background: #fde0e4; color: #8a0d24; }
+[data-theme=dark] .status-ontime   { background: #0d2e1f; color: #3fb950; }
+[data-theme=dark] .status-late     { background: #3a2508; color: #f4a261; }
+[data-theme=dark] .status-verylate { background: #3a0810; color: #f28b9d; }
+
 /* ── Corridor trains/route split ── */
 .corridor-split { display: grid; grid-template-columns: 1fr 220px; gap: 2rem; align-items: start; }
 .cards-grid--compact { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }

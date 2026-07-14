@@ -203,6 +203,16 @@ var siteBaseURL string
 
 var funcMap = template.FuncMap{
 	"staticVer": func() string { return staticVersion },
+	"delayText": func(min int) string {
+		switch {
+		case min > 1:
+			return fmt.Sprintf("%d min late", min)
+		case min < -1:
+			return fmt.Sprintf("%d min early", -min)
+		default:
+			return "On time"
+		}
+	},
 	"siteName":  func() string { return getSiteName() },
 	"adminNavStyle": func() template.HTML {
 		t, ok := siteThemes[getAdminTheme()]

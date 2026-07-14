@@ -489,6 +489,7 @@ func (app *App) handleTrain(w http.ResponseWriter, r *http.Request) {
 		Comments           []Comment
 		OwnPendingComments []Comment
 		CanManage          bool
+		Live               *liveTrain
 	}
 	app.renderPublic(w, r, "train.html", publicPage{
 		Title: train.DisplayName + " — AmazingTrak",
@@ -506,6 +507,7 @@ func (app *App) handleTrain(w http.ResponseWriter, r *http.Request) {
 			Comments:           comments,
 			OwnPendingComments: ownPendingComments,
 			CanManage:          canManage,
+			Live:               app.findLiveTrain(train.Slug),
 		},
 	})
 }

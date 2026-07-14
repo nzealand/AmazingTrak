@@ -92,7 +92,14 @@
     </div>
     <div>
       <dt>Live Status</dt>
-      <dd><a href="{{transitdocsURL $d.Train.TrainNumber | safeURL}}" target="_blank" rel="noopener">Track on TransitDocs →</a></dd>
+      <dd>
+        {{if $d.Live}}
+        <span class="status-badge status-{{$d.Live.Status}}">{{delayText $d.Live.DelayMin}}</span>
+        {{if $d.Live.NextStation}}<span style="color:var(--muted)"> · Next: {{$d.Live.NextStation}}</span>{{end}}
+        <br>
+        {{end}}
+        <a href="{{transitdocsURL $d.Train.TrainNumber | safeURL}}" target="_blank" rel="noopener">Track on TransitDocs →</a>
+      </dd>
     </div>
     {{end}}
     {{if $d.Train.Direction}}

@@ -278,6 +278,24 @@ func (c *liveTrainsCache) load() (liveSnapshot, bool) {
 	return liveSnapshot{Trains: c.trains, UpdatedAt: c.updatedAt}, true
 }
 
+// findLiveTrain returns the current snapshot's entry for a train, matched by
+// slug, if the feature is on and that train is currently running.
+func (app *App) findLiveTrain(slug string) *liveTrain {
+	if !app.liveTrainsEnabled() {
+		return nil
+	}
+	snap, ok := app.liveTrains.load()
+	if !ok {
+		return nil
+	}
+	for i, t := range snap.Trains {
+		if t.TrainSlug == slug {
+			return &snap.Trains[i]
+		}
+	}
+	return nil
+}
+
 // liveTrainsEnabled reports whether an admin has turned the feature on.
 func (app *App) liveTrainsEnabled() bool {
 	prefs, err := getSitePrefs(app.db)
