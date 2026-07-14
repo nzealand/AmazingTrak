@@ -97,6 +97,9 @@
                 <div class="card-meta">
                   {{if .Direction}}<span>{{.Direction}}</span>{{end}}
                   {{if .Notes}}<br><span style="font-size:.8rem">{{truncate .Notes 80}}</span>{{end}}
+                  {{with index $d.LiveByTrain .Slug}}
+                  <br><span class="status-badge status-{{.Status}}">{{delayText .DelayMin}}</span>{{if .NextStation}}<span style="color:var(--muted);font-size:.8rem"> · Next: {{.NextStation}}</span>{{end}}
+                  {{end}}
                 </div>
               </div>
             </div>

@@ -248,9 +248,26 @@ func (app *App) handleCorridors(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", 500)
 		return
 	}
+
+	// Count currently-running trains per corridor, for a "N live now" hint on
+	// each route card. One pass over the cached snapshot rather than a
+	// per-corridor lookup.
+	liveCounts := map[string]int{}
+	if app.liveTrainsEnabled() {
+		if snap, ok := app.liveTrains.load(); ok {
+			for _, t := range snap.Trains {
+				liveCounts[t.CorridorSlug]++
+			}
+		}
+	}
+
+	type corridorsPage struct {
+		Corridors  []Corridor
+		LiveCounts map[string]int
+	}
 	app.renderPublic(w, r, "corridors.html", publicPage{
 		Title: "Routes — AmazingTrak",
-		Data:  corridors,
+		Data:  corridorsPage{Corridors: corridors, LiveCounts: liveCounts},
 	})
 }
 
@@ -335,6 +352,17 @@ func (app *App) handleCorridor(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Live status per train, keyed by slug, for the trains grid — same source
+	// as the individual train page, just looked up once per train here.
+	liveByTrain := map[string]*liveTrain{}
+	if app.liveTrainsEnabled() {
+		for _, t := range trains {
+			if lt := app.findLiveTrain(t.Slug); lt != nil {
+				liveByTrain[t.Slug] = lt
+			}
+		}
+	}
+
 	type corridorDetail struct {
 		Corridor           Corridor
 		Trains             []Train
@@ -347,6 +375,7 @@ func (app *App) handleCorridor(w http.ResponseWriter, r *http.Request) {
 		NeedsVerify        bool
 		Comments           []Comment
 		OwnPendingComments []Comment
+		LiveByTrain        map[string]*liveTrain
 	}
 	app.renderPublic(w, r, "corridor.html", publicPage{
 		Title: corridor.Name + " — AmazingTrak",
@@ -355,6 +384,7 @@ func (app *App) handleCorridor(w http.ResponseWriter, r *http.Request) {
 			Corridor: corridor, Trains: trains, Media: media, BestVideo: bestVideo, Stops: stops,
 			CanManage: canManage, CanRequest: canRequest, HasRequested: hasRequested, NeedsVerify: needsVerify,
 			Comments: corridorComments, OwnPendingComments: ownPendingComments,
+			LiveByTrain: liveByTrain,
 		},
 	})
 }
