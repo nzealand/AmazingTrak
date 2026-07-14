@@ -142,6 +142,41 @@ func runMigrations(db *sql.DB) error {
 		markMigration(db, 1)
 	}
 
+	// Migration 2: Amtrak 816/817/880/806/807/887/888 were seeded into Acela
+	// but are actually Northeast Regional numbers, while 2107/2117 were seeded
+	// into Northeast Regional but are actually Acela numbers (Acela trains are
+	// all in the 2100-2295 range). Move each by train_number, not id, since
+	// ids can differ between the dev DB and production.
+	if !migrationApplied(db, 2) {
+		if err := fixAcelaNortheastRegionalMixup(db); err != nil {
+			return err
+		}
+		markMigration(db, 2)
+	}
+
+	return nil
+}
+
+func fixAcelaNortheastRegionalMixup(db *sql.DB) error {
+	var acelaID, nerID int64
+	if err := db.QueryRow(`SELECT id FROM corridors WHERE slug='amtrak-acela'`).Scan(&acelaID); err != nil {
+		return nil // corridor doesn't exist on this instance; nothing to fix
+	}
+	if err := db.QueryRow(`SELECT id FROM corridors WHERE slug='amtrak-northeast-regional'`).Scan(&nerID); err != nil {
+		return nil
+	}
+	toNER := []string{"816", "817", "880", "806", "807", "887", "888"}
+	for _, n := range toNER {
+		if _, err := db.Exec(`UPDATE trains SET corridor_id=? WHERE corridor_id=? AND train_number=?`, nerID, acelaID, n); err != nil {
+			return err
+		}
+	}
+	toAcela := []string{"2107", "2117"}
+	for _, n := range toAcela {
+		if _, err := db.Exec(`UPDATE trains SET corridor_id=? WHERE corridor_id=? AND train_number=?`, acelaID, nerID, n); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
