@@ -413,8 +413,16 @@ func (app *App) clearUserSessionCookie(w http.ResponseWriter) {
 	})
 }
 
-func (app *App) authenticateUser(username, password string) (*User, error) {
-	u, err := userByUsername(app.db, username)
+// authenticateUser verifies credentials for a registered user. identifier may
+// be a username or an email address; email lookup is tried when "@" is present.
+func (app *App) authenticateUser(identifier, password string) (*User, error) {
+	var u User
+	var err error
+	if strings.Contains(identifier, "@") {
+		u, err = userByEmail(app.db, identifier)
+	} else {
+		u, err = userByUsername(app.db, identifier)
+	}
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

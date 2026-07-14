@@ -30,8 +30,21 @@
   <div id="amtrak-map"></div>
   <div id="map-loading">Loading route map…</div>
 </div>
-<div style="padding:.4rem 1rem;font-size:.75rem;color:var(--muted);border-top:1px solid var(--border);display:flex;justify-content:space-between;flex-wrap:wrap;gap:.25rem">
-  <span>Route data from <a href="https://data-usdot.opendata.arcgis.com/datasets/usdot::amtrak-routes" target="_blank" rel="noopener" style="color:var(--muted)">USDOT NTAD</a>. Click a route for details.</span>
+<div style="padding:.4rem 1rem;font-size:.75rem;color:var(--muted);border-top:1px solid var(--border);display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+  <span>
+    Route data from <a href="https://data-usdot.opendata.arcgis.com/datasets/usdot::amtrak-routes" target="_blank" rel="noopener" style="color:var(--muted)">USDOT NTAD</a>. Click a route for details.
+    {{if .Data.LiveTrains}}
+    Live positions from <a href="https://amtraker.com/" target="_blank" rel="noopener" style="color:var(--muted)">Amtraker</a>, refreshed every 90s and approximate — not affiliated with Amtrak.
+    {{end}}
+  </span>
+  {{if .Data.LiveTrains}}
+  <span style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+    <span style="display:inline-flex;align-items:center;gap:.3rem"><span style="width:.6rem;height:.6rem;border-radius:50%;background:#2a893d;display:inline-block"></span>On time</span>
+    <span style="display:inline-flex;align-items:center;gap:.3rem"><span style="width:.6rem;height:.6rem;border-radius:50%;background:#f4a261;display:inline-block"></span>10+ min late</span>
+    <span style="display:inline-flex;align-items:center;gap:.3rem"><span style="width:.6rem;height:.6rem;border-radius:50%;background:#c60c2c;display:inline-block"></span>30+ min late</span>
+    <span id="map-live-status"></span>
+  </span>
+  {{end}}
   <span id="map-route-count"></span>
 </div>
 
@@ -45,8 +58,9 @@ function normSlug(s) {
 }
 // Map of normalized slug (leading "amtrak-" stripped) -> actual route slug.
 var CORRIDOR_BY_NORM = {};
-{{range .Data}}{{if .Slug}}CORRIDOR_BY_NORM[normSlug("{{.Slug}}")] = "{{.Slug}}";
+{{range .Data.Corridors}}{{if .Slug}}CORRIDOR_BY_NORM[normSlug("{{.Slug}}")] = "{{.Slug}}";
 {{end}}{{end}}
+var LIVE_TRAINS_ENABLED = {{if .Data.LiveTrains}}true{{else}}false{{end}};
 function findCorridorSlug(name) {
   var norm = normSlug(jsSlugify(name));
   return CORRIDOR_BY_NORM[norm] || null;
@@ -71,6 +85,9 @@ function findCorridorSlug(name) {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 18
   }).addTo(map);
+
+  var routeLayer = L.layerGroup().addTo(map);
+  var trainLayer = L.layerGroup().addTo(map);
 
   var loading = document.getElementById('map-loading');
 
@@ -103,7 +120,7 @@ function findCorridorSlug(name) {
 
         L.geoJSON(feature, {
           style: { color: color, weight: 3, opacity: .85 }
-        }).addTo(map).bindPopup(popup);
+        }).bindPopup(popup).addTo(routeLayer);
       });
     })
     .catch(function(err) {
@@ -111,6 +128,74 @@ function findCorridorSlug(name) {
       loading.style.pointerEvents = 'auto';
       console.error('Amtrak routes error:', err);
     });
+
+  // ---- Live train positions (only when enabled in admin settings) ----
+  if (!LIVE_TRAINS_ENABLED) return;
+
+  L.control.layers(null, {
+    'Route lines': routeLayer,
+    'Live trains': trainLayer
+  }, { collapsed: false, position: 'topright' }).addTo(map);
+
+  var STATUS_COLOR = { ontime: '#2a893d', late: '#f4a261', verylate: '#c60c2c' };
+  var statusEl = document.getElementById('map-live-status');
+
+  function delayText(min) {
+    if (min > 1) return min + ' min late';
+    if (min < -1) return Math.abs(min) + ' min early';
+    return 'On time';
+  }
+
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  function trainPopup(t) {
+    var html = '<strong style="font-size:.9rem">' + esc(t.displayName) + '</strong>';
+    html += '<br><span style="font-size:.8rem;color:' + STATUS_COLOR[t.status] + '">' +
+            esc(delayText(t.delayMin)) + '</span>';
+    if (t.speed > 0) html += '<span style="font-size:.8rem"> · ' + t.speed + ' mph ' + esc(t.heading) + '</span>';
+    if (t.nextStation) html += '<br><span style="font-size:.8rem">Next: ' + esc(t.nextStation) + '</span>';
+    html += '<br><a href="/trains/' + encodeURIComponent(t.trainSlug) + '" style="font-size:.82rem">Train ' +
+            esc(t.trainNum) + ' →</a>';
+    return html;
+  }
+
+  function refreshTrains() {
+    fetch('/api/live-trains')
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        var trains = data.trains || [];
+        trainLayer.clearLayers();
+        trains.forEach(function(t) {
+          L.circleMarker([t.lat, t.lon], {
+            radius: 6,
+            color: '#fff',
+            weight: 2,
+            fillColor: STATUS_COLOR[t.status] || '#457b9d',
+            fillOpacity: 1
+          }).bindPopup(trainPopup(t)).addTo(trainLayer);
+        });
+        if (statusEl) {
+          statusEl.textContent = trains.length + ' trains running · updated ' +
+            new Date(data.updatedAt).toLocaleTimeString();
+        }
+      })
+      .catch(function(err) {
+        if (statusEl) statusEl.textContent = 'Live train data unavailable';
+        console.error('Live trains error:', err);
+      });
+  }
+
+  refreshTrains();
+  // Upstream refreshes every 90s; matching that keeps markers current without
+  // polling for data that hasn't changed.
+  setInterval(refreshTrains, 90000);
 })();
 </script>
 {{end}}

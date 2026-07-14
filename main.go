@@ -182,6 +182,7 @@ type App struct {
 	adminTemplates  map[string]*template.Template
 	indexCacheMu    sync.RWMutex
 	indexCacheHTML  []byte
+	liveTrains      liveTrainsCache
 }
 
 type nonceKey struct{}
@@ -706,6 +707,9 @@ func main() {
 		}
 	}()
 
+	// Live train positions; a no-op while the feature is disabled in Settings.
+	go app.pollLiveTrains()
+
 	mux := http.NewServeMux()
 
 	// Static embedded files — long cache when ?v= is present (versioned URL)
@@ -738,6 +742,7 @@ func main() {
 	mux.HandleFunc("GET /trains-list", app.handleTrainsList)
 	mux.HandleFunc("GET /map", app.handleMap)
 	mux.HandleFunc("GET /api/amtrak-routes", app.handleAmtrakRoutes)
+	mux.HandleFunc("GET /api/live-trains", app.handleLiveTrains)
 	mux.HandleFunc("GET /routes", app.handleCorridors)
 	mux.HandleFunc("GET /routes/{slug}", app.handleCorridor)
 	// Permanent redirects from the former /corridors URLs (renamed to /routes)

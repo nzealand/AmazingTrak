@@ -204,31 +204,41 @@ func (app *App) handleUserLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ipHash := hashIP(r)
-	username := strings.TrimSpace(r.FormValue("username"))
+	// Accept either username or email address in the identifier field.
+	identifier := strings.TrimSpace(r.FormValue("identifier"))
 	password := r.FormValue("password")
+
+	// Resolve the canonical username for throttle/audit so email addresses are
+	// never written to login_attempts or used as account keys in rate-limit checks.
+	throttleUsername := identifier
+	if strings.Contains(identifier, "@") {
+		if resolved, err := userByEmail(app.db, identifier); err == nil {
+			throttleUsername = resolved.Username
+		}
+	}
 
 	// Throttle before the password is checked; blocked attempts are not recorded
 	// as new failures, so the time-windowed limits drain on their own.
-	if blocked, reason := app.userLoginBlocked(username, ipHash); blocked {
+	if blocked, reason := app.userLoginBlocked(throttleUsername, ipHash); blocked {
 		setFlash(w, reason)
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	u, err := app.authenticateUser(username, password)
+	u, err := app.authenticateUser(identifier, password)
 	if err != nil {
 		http.Error(w, "Server error", 500)
 		return
 	}
 	if u == nil {
-		app.recordLoginAttempt(ipHash, username, false)
+		app.recordLoginAttempt(ipHash, throttleUsername, false)
 		// Bump the per-account sequential counter (no-op for unknown usernames);
 		// hard-locks the account once it reaches the threshold.
-		app.registerFailedLogin(username)
+		app.registerFailedLogin(throttleUsername)
 		setFlash(w, "Invalid username or password.")
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	app.recordLoginAttempt(ipHash, username, true)
+	app.recordLoginAttempt(ipHash, u.Username, true)
 	// A successful login clears the sequential failure counter.
 	app.clearLoginFailures(u.ID)
 	app.db.Exec(`UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id=?`, u.ID)

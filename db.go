@@ -90,6 +90,9 @@ func runMigrations(db *sql.DB) error {
 	// User auto-approval policy toggles.
 	db.Exec(`ALTER TABLE site_preferences ADD COLUMN auto_approve_on_confirm INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE site_preferences ADD COLUMN auto_approve_on_video INTEGER NOT NULL DEFAULT 1`)
+	// Live train positions on /map (Amtraker feed). Off by default: enabling it
+	// starts polling a third-party API, so that must be an explicit admin choice.
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN live_trains_enabled INTEGER NOT NULL DEFAULT 0`)
 	// Password reset: a single-use token + timestamp, kept separate from the
 	// email-confirmation token so resetting a password never disturbs verification.
 	db.Exec(`ALTER TABLE users ADD COLUMN reset_token TEXT NOT NULL DEFAULT ''`)

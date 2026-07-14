@@ -236,6 +236,27 @@
   </section>
 
   <section>
+    <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Live Train Positions</h3>
+    <form method="post" action="{{.AdminPrefix}}/settings" class="admin-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="live_trains">
+      <div class="form-group">
+        <label class="form-label">
+          <input type="hidden" name="live_trains_enabled" value="0">
+          <input type="checkbox" name="live_trains_enabled" value="1" {{if $d.Prefs.LiveTrainsEnabled}}checked{{end}}>
+          Show live train positions on the public map
+        </label>
+        <div class="form-hint">
+          Plots currently-running trains on <a href="/map" target="_blank" rel="noopener">/map</a>, colored by how late they are, with each marker linking to its train page. Only trains that exist in your database are shown.
+          <br>
+          Position data comes from the third-party <a href="https://amtraker.com/" target="_blank" rel="noopener">Amtraker</a> API and refreshes every 90 seconds; Amtrak's own GPS can lag several minutes behind, so treat positions as approximate. While this is off, the site never contacts the API and the map shows route lines only.
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit">Save Live Train Settings</button>
+    </form>
+  </section>
+
+  <section>
     <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Email (Resend)</h3>
     <p style="font-size:.875rem;color:var(--muted);margin-bottom:1rem">
       Email is optional. It powers address verification and admin notifications via

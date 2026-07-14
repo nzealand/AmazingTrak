@@ -229,9 +229,16 @@ func (app *App) handleTrainsList(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) handleMap(w http.ResponseWriter, r *http.Request) {
 	corridors, _ := allCorridors(app.db, true)
+	type mapData struct {
+		Corridors  []Corridor
+		LiveTrains bool
+	}
 	app.renderPublic(w, r, "map.html", publicPage{
 		Title: "Amtrak Route Map — AmazingTrak",
-		Data:  corridors,
+		Data: mapData{
+			Corridors:  corridors,
+			LiveTrains: app.liveTrainsEnabled(),
+		},
 	})
 }
 
