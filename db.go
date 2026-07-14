@@ -381,6 +381,27 @@ CREATE TABLE IF NOT EXISTS comments (
 	CHECK (train_id IS NOT NULL OR corridor_id IS NOT NULL)
 );
 
+CREATE TABLE IF NOT EXISTS vantage_spots (
+	id TEXT PRIMARY KEY,
+	latitude REAL NOT NULL,
+	longitude REAL NOT NULL,
+	title TEXT NOT NULL DEFAULT '',
+	caption TEXT NOT NULL DEFAULT '',
+	media_type TEXT NOT NULL DEFAULT 'image' CHECK (media_type IN ('image', 'video')),
+	url TEXT NOT NULL DEFAULT '',
+	local_path TEXT NOT NULL DEFAULT '',
+	original_filename TEXT NOT NULL DEFAULT '',
+	stored_filename TEXT NOT NULL DEFAULT '',
+	source_domain TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+	submitter_ip_hash TEXT NOT NULL DEFAULT '',
+	submitter_user_agent TEXT NOT NULL DEFAULT '',
+	rejection_reason TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	reviewed_at TEXT NOT NULL DEFAULT '',
+	reviewed_by INTEGER REFERENCES admin_users(id)
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS email_errors (
 	id INTEGER PRIMARY KEY,
 	to_addr TEXT NOT NULL,
@@ -491,6 +512,7 @@ CREATE INDEX IF NOT EXISTS idx_comments_train_status ON comments(train_id, statu
 CREATE INDEX IF NOT EXISTS idx_comments_status ON comments(status);
 CREATE INDEX IF NOT EXISTS idx_comments_user ON comments(user_id);
 CREATE INDEX IF NOT EXISTS idx_conductor_req_status ON conductor_requests(status);
+CREATE INDEX IF NOT EXISTS idx_vantage_spots_status ON vantage_spots(status);
 CREATE INDEX IF NOT EXISTS idx_email_verifications_user_time ON email_verifications(user_id, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_conductor_req_pending ON conductor_requests(corridor_id, user_id) WHERE status='pending';
 

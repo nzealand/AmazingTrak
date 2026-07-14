@@ -1,0 +1,117 @@
+{{define "title"}}Suggest a Vantage Spot{{end}}
+{{define "head"}}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css">
+<style>
+#pin-map { width:100%; height:340px; border-radius:6px; border:1px solid var(--border); }
+</style>
+{{end}}
+{{define "content"}}
+<div class="container">
+  <div class="page-header">
+    <h1>Suggest a Vantage Spot</h1>
+    <p class="subtitle">Know a great place to watch or photograph trains? Drop a pin and share it — link a YouTube video or upload a photo taken from the spot.</p>
+  </div>
+  {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+  <form method="post" action="/vantage-spots/suggest" enctype="multipart/form-data" class="suggest-form">
+    <div class="form-group form-honeypot" aria-hidden="true">
+      <label class="form-label">Website</label>
+      <input class="form-input" type="text" name="website" autocomplete="off" tabindex="-1">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Location *</label>
+      <div id="pin-map"></div>
+      <div class="form-hint" id="pin-hint">Click the map to drop a pin at the vantage spot.</div>
+      <input type="hidden" id="lat" name="lat" value="{{if .FormValues}}{{index .FormValues "lat"}}{{end}}">
+      <input type="hidden" id="lon" name="lon" value="{{if .FormValues}}{{index .FormValues "lon"}}{{end}}">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="title">Title (optional)</label>
+      <input class="form-input" type="text" id="title" name="title" maxlength="120" placeholder="e.g. Overpass north of the station" value="{{if .FormValues}}{{index .FormValues "title"}}{{end}}">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="caption">Notes (optional)</label>
+      <textarea class="form-textarea" id="caption" name="caption" rows="3" maxlength="500" placeholder="Best time of day, parking, angle, anything a photographer should know…">{{if .FormValues}}{{index .FormValues "caption"}}{{end}}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Show it off with *</label>
+      <div style="display:flex;gap:1.5rem;margin-bottom:.75rem">
+        <label style="display:flex;align-items:center;gap:.4rem"><input type="radio" name="media_kind" value="youtube" id="kind-youtube" checked> YouTube link</label>
+        <label style="display:flex;align-items:center;gap:.4rem"><input type="radio" name="media_kind" value="photo" id="kind-photo"> Photo upload</label>
+      </div>
+      <div id="youtube-fields">
+        <input class="form-input" type="url" name="url" placeholder="https://www.youtube.com/watch?v=..." value="{{if .FormValues}}{{index .FormValues "url"}}{{end}}">
+        <div class="form-hint">Must be a youtube.com or youtu.be link showing this vantage spot.</div>
+      </div>
+      <div id="photo-fields" style="display:none">
+        <input class="form-input" type="file" name="photo" accept="image/*">
+        <div class="form-hint">A photo taken from this spot. GPS metadata, if present, is stripped before publishing.</div>
+      </div>
+    </div>
+
+    <input type="hidden" name="a" id="f_a">
+    <input type="hidden" name="b" id="f_b">
+    <button type="submit" class="btn btn-primary">Submit Vantage Spot</button>
+    <a href="/map" class="btn btn-secondary" style="margin-left:.5rem">Cancel</a>
+  </form>
+  <p style="margin-top:2rem;font-size:.85rem;color:var(--muted)">
+    Submissions are reviewed before appearing on the map.
+  </p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script nonce="{{.Nonce}}">(function(){var _0x=String,_1x=_0x.fromCharCode,_2x=[102,95,98],_3x=_2x.map(function(c){return _1x(c);}).join(''),_4x=document[_1x(103,101,116,69,108,101,109,101,110,116,66,121,73,100)](_3x),_5x=[111,107];_4x[_1x(118,97,108,117,101)]=_5x.map(function(c){return _1x(c);}).join('');}());</script>
+<script nonce="{{.Nonce}}">
+(function() {
+  var loadTime = Date.now();
+  document.querySelector('.suggest-form').addEventListener('submit', function(e) {
+    if (Date.now() - loadTime < 2000) { e.preventDefault(); return; }
+    var lat = document.getElementById('lat').value;
+    var lon = document.getElementById('lon').value;
+    if (!lat || !lon) {
+      e.preventDefault();
+      document.getElementById('pin-hint').textContent = 'Please click the map to drop a pin before submitting.';
+      document.getElementById('pin-hint').style.color = '#c60c2c';
+    }
+  });
+
+  var ytFields = document.getElementById('youtube-fields');
+  var photoFields = document.getElementById('photo-fields');
+  function updateKind() {
+    var youtube = document.getElementById('kind-youtube').checked;
+    ytFields.style.display = youtube ? '' : 'none';
+    photoFields.style.display = youtube ? 'none' : '';
+  }
+  document.getElementById('kind-youtube').addEventListener('change', updateKind);
+  document.getElementById('kind-photo').addEventListener('change', updateKind);
+
+  var map = L.map('pin-map', { center: [39.5, -98.35], zoom: 4 });
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 18
+  }).addTo(map);
+
+  var marker = null;
+  var latInput = document.getElementById('lat');
+  var lonInput = document.getElementById('lon');
+  var hint = document.getElementById('pin-hint');
+  var existingLat = parseFloat(latInput.value), existingLon = parseFloat(lonInput.value);
+  function setPin(lat, lon) {
+    if (marker) { marker.setLatLng([lat, lon]); }
+    else { marker = L.marker([lat, lon], { draggable: true }).addTo(map); marker.on('dragend', function() { var p = marker.getLatLng(); setPin(p.lat, p.lng); }); }
+    latInput.value = lat.toFixed(6);
+    lonInput.value = lon.toFixed(6);
+    hint.style.color = '';
+    hint.textContent = 'Pin set — drag it to fine-tune, or click elsewhere to move it.';
+  }
+  if (!isNaN(existingLat) && !isNaN(existingLon)) {
+    setPin(existingLat, existingLon);
+    map.setView([existingLat, existingLon], 10);
+  }
+  map.on('click', function(e) { setPin(e.latlng.lat, e.latlng.lng); });
+
+  updateKind();
+})();
+</script>
+{{end}}

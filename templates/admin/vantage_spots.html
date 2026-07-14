@@ -1,0 +1,54 @@
+{{define "admin_content"}}
+{{$d := .Data}}
+<div style="margin-bottom:.75rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+  <a href="{{.AdminPrefix}}/vantage-spots" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter ""}} btn-primary{{end}}">All</a>
+  <a href="{{.AdminPrefix}}/vantage-spots?status=pending" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter "pending"}} btn-primary{{end}}">Pending</a>
+  <a href="{{.AdminPrefix}}/vantage-spots?status=approved" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter "approved"}} btn-primary{{end}}">Approved</a>
+  <a href="{{.AdminPrefix}}/vantage-spots?status=rejected" class="btn btn-sm btn-secondary{{if eq $d.StatusFilter "rejected"}} btn-primary{{end}}">Rejected</a>
+</div>
+{{if $d.Spots}}
+<table class="admin-table">
+  <thead><tr><th>Title</th><th>Location</th><th>Media</th><th>Notes</th><th>Status</th><th>Submitted</th><th style="width:22%">Actions</th></tr></thead>
+  <tbody>
+    {{range $d.Spots}}
+    <tr>
+      <td style="max-width:200px;font-size:.85rem">{{if .Title}}{{truncate .Title 80}}{{else}}<span style="color:var(--muted)">—</span>{{end}}</td>
+      <td style="font-size:.8rem;color:var(--muted)">{{fmtFloat .Latitude}}, {{fmtFloat .Longitude}}</td>
+      <td>
+        {{if eq .MediaType "video"}}
+        <a href="{{.URL}}" target="_blank" rel="noopener">▶ YouTube</a>
+        {{else}}
+        <a href="{{.PublicURL}}" target="_blank" rel="noopener">🖼 Photo</a>
+        {{end}}
+      </td>
+      <td style="max-width:220px;font-size:.85rem;color:var(--muted)">{{if .Caption}}{{truncate .Caption 100}}{{else}}—{{end}}</td>
+      <td><span class="status-badge status-{{.Status}}">{{.Status}}</span></td>
+      <td style="font-size:.8rem;color:var(--muted)">{{.CreatedAt}}</td>
+      <td>
+        {{if eq .Status "pending"}}
+        <div style="display:flex;gap:.3rem;align-items:flex-start;flex-wrap:wrap">
+          <form method="post" action="{{$.AdminPrefix}}/vantage-spots/{{.ID}}/approve">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-primary" type="submit">Approve</button>
+          </form>
+          <form method="post" action="{{$.AdminPrefix}}/vantage-spots/{{.ID}}/reject">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button class="btn btn-sm btn-danger" type="submit">Reject</button>
+          </form>
+        </div>
+        {{else}}
+        {{if .RejectionReason}}<span style="font-size:.8rem;color:var(--muted)">{{.RejectionReason}}</span>{{end}}
+        <form method="post" action="{{$.AdminPrefix}}/vantage-spots/{{.ID}}/delete" onsubmit="return confirm('Permanently delete this vantage spot?')" style="margin-top:.3rem">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+        </form>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p style="color:var(--muted);padding:2rem 0">No vantage spots{{if $d.StatusFilter}} with status "{{$d.StatusFilter}}"{{end}}.</p>
+{{end}}
+{{end}}

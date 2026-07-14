@@ -3,21 +3,23 @@ package main
 // Pending-items threshold notifications.
 //
 // "Pending review items" = pending suggestions + pending comments + unapproved
-// registrations + pending conductor requests. The admin is emailed when the
-// total crosses 1, 10, or 100 (upward). To avoid spamming, the highest threshold
-// already notified is stored in site_preferences.pending_notify_level; a given
-// threshold only fires again after the total has dropped back below it.
+// registrations + pending conductor requests + pending vantage spots. The admin
+// is emailed when the total crosses 1, 10, or 100 (upward). To avoid spamming,
+// the highest threshold already notified is stored in
+// site_preferences.pending_notify_level; a given threshold only fires again
+// after the total has dropped back below it.
 
 var pendingThresholds = []int{1, 10, 100}
 
 // pendingItemsTotal returns the number of items awaiting admin review.
 func (app *App) pendingItemsTotal() int {
-	var suggestions, comments, registrations, conductorReqs int
+	var suggestions, comments, registrations, conductorReqs, vantageSpots int
 	app.db.QueryRow(`SELECT COUNT(*) FROM suggestions WHERE status='pending'`).Scan(&suggestions)
 	app.db.QueryRow(`SELECT COUNT(*) FROM comments WHERE status='pending'`).Scan(&comments)
 	app.db.QueryRow(`SELECT COUNT(*) FROM users WHERE status IN ('pending','confirmed')`).Scan(&registrations)
 	app.db.QueryRow(`SELECT COUNT(*) FROM conductor_requests WHERE status='pending'`).Scan(&conductorReqs)
-	return suggestions + comments + registrations + conductorReqs
+	app.db.QueryRow(`SELECT COUNT(*) FROM vantage_spots WHERE status='pending'`).Scan(&vantageSpots)
+	return suggestions + comments + registrations + conductorReqs + vantageSpots
 }
 
 // highestThresholdCrossed returns the largest threshold <= total, or 0.

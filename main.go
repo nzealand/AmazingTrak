@@ -753,6 +753,9 @@ func main() {
 	mux.HandleFunc("GET /map", app.handleMap)
 	mux.HandleFunc("GET /api/amtrak-routes", app.handleAmtrakRoutes)
 	mux.HandleFunc("GET /api/live-trains", app.handleLiveTrains)
+	mux.HandleFunc("GET /api/vantage-spots", app.handleVantageSpotsAPI)
+	mux.HandleFunc("GET /vantage-spots/suggest", app.handleVantageSpotForm)
+	mux.HandleFunc("POST /vantage-spots/suggest", app.handleVantageSpotSubmit)
 	mux.HandleFunc("GET /routes", app.handleCorridors)
 	mux.HandleFunc("GET /routes/{slug}", app.handleCorridor)
 	// Permanent redirects from the former /corridors URLs (renamed to /routes)
@@ -864,6 +867,13 @@ func main() {
 	mux.HandleFunc("POST "+p+"/suggestions/{id}/unapprove", rs(app.handleAdminSuggestionUnapprove))
 	mux.HandleFunc("POST "+p+"/suggestions/{id}/spam", rs(app.handleAdminSuggestionMarkSpam))
 	mux.HandleFunc("POST "+p+"/suggestions/{id}/edit", rs(app.handleAdminSuggestionEdit))
+
+	// Admin vantage spots (permission level 7)
+	rv := func(h http.HandlerFunc) http.HandlerFunc { return app.requirePermission(7, h) }
+	mux.HandleFunc("GET "+p+"/vantage-spots", rv(app.handleAdminVantageSpots))
+	mux.HandleFunc("POST "+p+"/vantage-spots/{id}/approve", rv(app.handleAdminVantageSpotApprove))
+	mux.HandleFunc("POST "+p+"/vantage-spots/{id}/reject", rv(app.handleAdminVantageSpotReject))
+	mux.HandleFunc("POST "+p+"/vantage-spots/{id}/delete", rv(app.handleAdminVantageSpotDelete))
 
 	// Admin comments (permission level 2)
 	rco := func(h http.HandlerFunc) http.HandlerFunc { return app.requirePermission(2, h) }

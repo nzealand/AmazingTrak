@@ -46,6 +46,7 @@
   </span>
   {{end}}
   <span id="map-route-count"></span>
+  <a href="/vantage-spots/suggest" style="color:var(--muted)">📍 Suggest a vantage spot</a>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
@@ -88,6 +89,7 @@ function findCorridorSlug(name) {
 
   var routeLayer = L.layerGroup().addTo(map);
   var trainLayer = L.layerGroup().addTo(map);
+  var vantageLayer = L.layerGroup(); // off by default — not added to map
 
   var loading = document.getElementById('map-loading');
 
@@ -129,13 +131,42 @@ function findCorridorSlug(name) {
       console.error('Amtrak routes error:', err);
     });
 
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  var overlays = { 'Route lines': routeLayer };
+  if (LIVE_TRAINS_ENABLED) overlays['Live trains'] = trainLayer;
+  overlays['Vantage spots'] = vantageLayer;
+  L.control.layers(null, overlays, { collapsed: false, position: 'topright' }).addTo(map);
+
+  // ---- Vantage spots (submitted good photo/video locations, off by default) ----
+  fetch('/api/vantage-spots')
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data) {
+      (data.spots || []).forEach(function(s) {
+        var popup = '<strong style="font-size:.9rem">' + esc(s.title || 'Vantage spot') + '</strong>';
+        if (s.caption) popup += '<br><span style="font-size:.82rem">' + esc(s.caption) + '</span>';
+        if (s.mediaType === 'video' && s.url) {
+          popup += '<br><a href="' + s.url + '" target="_blank" rel="noopener" style="font-size:.82rem">▶ Watch on YouTube</a>';
+        } else if (s.photoUrl) {
+          popup += '<br><a href="' + s.photoUrl + '" target="_blank" rel="noopener" style="font-size:.82rem">🖼 View photo</a>';
+        }
+        L.circleMarker([s.lat, s.lon], {
+          radius: 7,
+          color: '#fff',
+          weight: 2,
+          fillColor: '#264653',
+          fillOpacity: 1
+        }).bindPopup(popup).addTo(vantageLayer);
+      });
+    })
+    .catch(function(err) { console.error('Vantage spots error:', err); });
+
   // ---- Live train positions (only when enabled in admin settings) ----
   if (!LIVE_TRAINS_ENABLED) return;
-
-  L.control.layers(null, {
-    'Route lines': routeLayer,
-    'Live trains': trainLayer
-  }, { collapsed: false, position: 'topright' }).addTo(map);
 
   var STATUS_COLOR = { ontime: '#2a893d', late: '#f4a261', verylate: '#c60c2c' };
   var statusEl = document.getElementById('map-live-status');
@@ -144,12 +175,6 @@ function findCorridorSlug(name) {
     if (min > 1) return min + ' min late';
     if (min < -1) return Math.abs(min) + ' min early';
     return 'On time';
-  }
-
-  function esc(s) {
-    var d = document.createElement('div');
-    d.textContent = s == null ? '' : String(s);
-    return d.innerHTML;
   }
 
   function trainPopup(t) {
