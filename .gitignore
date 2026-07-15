@@ -5,3 +5,4 @@ uploads/
 .env
 amazingtrak
 app.log
+.claude/
