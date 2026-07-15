@@ -88,10 +88,7 @@
   document.getElementById('kind-photo').addEventListener('change', updateKind);
 
   var map = L.map('pin-map', { center: [39.5, -98.35], zoom: 4 });
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 18
-  }).addTo(map);
+  mapTileLayer(L).addTo(map);
 
   // Route lines for context, so a submitter can see how close their pin is to
   // an actual track. Rendered with a single fixed color (unlike /map, which

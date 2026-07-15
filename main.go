@@ -588,6 +588,7 @@ func (app *App) securityHeaders(next http.Handler) http.Handler {
 					"script-src 'self' "+n+" https://cdn.jsdelivr.net; "+
 					"style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "+
 					"img-src 'self' https://tile.openstreetmap.org https://*.tile.openstreetmap.org "+
+					"https://*.basemaps.cartocdn.com "+
 					"https://upload.wikimedia.org "+
 					"https://i.imgur.com https://live.staticflickr.com https://i.ytimg.com "+
 					"https://img.youtube.com https://vumbnail.com data: blob:; "+
