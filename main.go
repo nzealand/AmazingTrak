@@ -353,7 +353,11 @@ var funcMap = template.FuncMap{
 		return false
 	},
 	"transitdocsURL": func(trainNumber string) string {
-		now := time.Now()
+		loc, err := time.LoadLocation("America/New_York")
+		if err != nil {
+			loc = time.UTC
+		}
+		now := time.Now().In(loc)
 		return fmt.Sprintf("https://asm.transitdocs.com/train/%d/%d/%d/A/%s",
 			now.Year(), int(now.Month()), now.Day(), trainNumber)
 	},
@@ -748,7 +752,7 @@ func main() {
 	mux.HandleFunc("POST /theme", app.handleThemeToggle)
 
 	// Public pages
-	mux.HandleFunc("GET /{$}", app.handleIndex)
+	mux.HandleFunc("GET /{$}", app.handleMap)
 	mux.HandleFunc("GET /overview", app.handleOverview)
 	mux.HandleFunc("GET /trains-list", app.handleTrainsList)
 	mux.HandleFunc("GET /map", app.handleMap)

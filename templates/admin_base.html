@@ -10,7 +10,7 @@
 </head>
 <body>
 <nav class="admin-nav">
-  <span class="brand">🚆 {{siteName}} Admin <span style="font-size:.7rem;opacity:.6;font-weight:400">v3.13.2 Jul 14 6:05PM</span></span>
+  <span class="brand">🚆 {{siteName}} Admin <span style="font-size:.7rem;opacity:.6;font-weight:400">v3.13.4 Jul 14 5:41PM</span></span>
   {{if .Authed}}
   <a href="{{.AdminPrefix}}">Dashboard</a>
   {{if or (eq .PermLevel 0) (ge .PermLevel 4)}}<a href="{{.AdminPrefix}}/routes">Routes</a>{{end}}
