@@ -23,6 +23,22 @@
   z-index: 1000;
   pointer-events: none;
 }
+.train-num-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: sans-serif;
+  border-radius: 3px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.5);
+  white-space: nowrap;
+  padding: 1px 4px;
+}
 </style>
 {{end}}
 {{define "content"}}
@@ -198,13 +214,16 @@ function findCorridorSlug(name) {
         var trains = data.trains || [];
         trainLayer.clearLayers();
         trains.forEach(function(t) {
-          L.circleMarker([t.lat, t.lon], {
-            radius: 6,
-            color: '#fff',
-            weight: 2,
-            fillColor: STATUS_COLOR[t.status] || '#457b9d',
-            fillOpacity: 1
-          }).bindPopup(trainPopup(t)).addTo(trainLayer);
+          var bg = STATUS_COLOR[t.status] || '#457b9d';
+          var label = esc(String(t.trainNum));
+          var icon = L.divIcon({
+            className: '',
+            html: '<div class="train-num-marker" style="background:' + bg + '">' + label + '</div>',
+            iconSize: [0, 0],
+            iconAnchor: [0, 0]
+          });
+          L.marker([t.lat, t.lon], { icon: icon })
+            .bindPopup(trainPopup(t)).addTo(trainLayer);
         });
         if (statusEl) {
           statusEl.textContent = trains.length + ' trains running · updated ' +
