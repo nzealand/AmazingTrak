@@ -1,10 +1,13 @@
-{{define "title"}}{{.Data.Train.DisplayName}} — {{siteName}}{{end}}
+{{define "title"}}Amtrak Train {{.Data.Train.TrainNumber}}{{if .Data.Train.CorridorName}}, {{.Data.Train.CorridorName}}{{end}} | {{siteName}}{{end}}
 {{define "head"}}
 {{$d := .Data}}
 {{$pageURL := printf "%s/trains/%s" baseURL $d.Train.Slug}}
+{{$socialTitle := printf "Amtrak Train %s" $d.Train.TrainNumber}}
+{{if $d.Train.CorridorName}}{{$socialTitle = printf "%s, %s" $socialTitle $d.Train.CorridorName}}{{end}}
+{{$socialTitle = printf "%s | %s" $socialTitle siteName}}
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{siteName}}">
-<meta property="og:title" content="{{$d.Train.DisplayName}} — {{siteName}}">
+<meta property="og:title" content="{{$socialTitle}}">
 <meta property="og:url" content="{{$pageURL}}">
 <meta property="og:locale" content="en_US">
 {{if $d.HeroMedia}}
@@ -13,14 +16,10 @@
 <meta property="og:image:alt" content="{{$d.Train.DisplayName}}">
 {{end}}
 {{if $d.BestVideo}}<meta property="og:video" content="{{$d.BestVideo.URL}}">{{end}}
-{{$desc := $d.Train.DisplayName}}
-{{if $d.Train.CorridorName}}{{$desc = printf "%s on the %s" $desc $d.Train.CorridorName}}{{end}}
-{{if $d.Rarities}}{{$desc = printf "%s —" $desc}}{{range $i,$r := $d.Rarities}}{{if $i}}{{$desc = printf "%s ·" $desc}}{{end}}{{$desc = printf "%s %s %s (%d)" $desc $r.Emoji $r.Label $r.Count}}{{end}}{{end}}
-{{if $d.BestVideo}}{{$desc = printf "%s — best video by %s" $desc $d.BestVideo.Contributor}}{{else if not $d.Rarities}}{{$desc = printf "%s — photos, videos and route info" $desc}}{{end}}
-<meta property="og:description" content="{{$desc}}">
+<meta property="og:description" content="Status, photos, videos, and route information for Train {{$d.Train.TrainNumber}}, operated by Amtrak. {{siteName}} is an independent railfan service.">
 <meta name="twitter:card" content="{{if $d.HeroMedia}}summary_large_image{{else}}summary{{end}}">
-<meta name="twitter:title" content="{{$d.Train.DisplayName}} — {{siteName}}">
-<meta name="twitter:description" content="{{$desc}}">
+<meta name="twitter:title" content="{{$socialTitle}}">
+<meta name="twitter:description" content="Status and route information for Train {{$d.Train.TrainNumber}}, operated by Amtrak. Independent and not affiliated with Amtrak.">
 {{if $d.HeroMedia}}
 <meta name="twitter:image" content="{{absURL $d.HeroMedia.PublicURL}}">
 <meta name="twitter:image:alt" content="{{$d.Train.DisplayName}}">
