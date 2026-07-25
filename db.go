@@ -154,6 +154,19 @@ func runMigrations(db *sql.DB) error {
 		markMigration(db, 2)
 	}
 
+	// Migration 3: reword the Acela corridor description to drop promotional
+	// language ("premium", "fastest in the Americas") in favor of neutral,
+	// factual wording, per trademark/branding-sensitivity review.
+	if !migrationApplied(db, 3) {
+		if _, err := db.Exec(`UPDATE corridors SET description=? WHERE slug='amtrak-acela' AND description=?`,
+			"High-speed passenger service operated by Amtrak between Boston, New York, Philadelphia, Baltimore, and Washington, D.C.",
+			"Amtrak's premium high-speed service connecting Boston, New York, Philadelphia, and Washington D.C. The fastest train in the Americas, reaching speeds up to 150 mph along the Northeast Corridor.",
+		); err != nil {
+			return err
+		}
+		markMigration(db, 3)
+	}
+
 	return nil
 }
 

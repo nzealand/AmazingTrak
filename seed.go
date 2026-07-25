@@ -27,7 +27,7 @@ type corridorSeed struct {
 var corridorSeeds = []corridorSeed{
 	// 1 NEC
 	{"Amtrak Acela", "amtrak-acela", "Northeast Corridor",
-		"Amtrak's premium high-speed service connecting Boston, New York, Philadelphia, and Washington D.C. The fastest train in the Americas, reaching speeds up to 150 mph along the Northeast Corridor.", 1},
+		"High-speed passenger service operated by Amtrak between Boston, New York, Philadelphia, Baltimore, and Washington, D.C.", 1},
 	// 2
 	{"Amtrak Northeast Regional", "amtrak-northeast-regional", "Northeast Corridor",
 		"Amtrak's busiest long-distance service, running the full length of the Northeast Corridor from Boston and New York south through Philadelphia to Washington D.C., with extensions into Virginia.", 2},

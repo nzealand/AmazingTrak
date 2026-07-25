@@ -1,4 +1,4 @@
-{{define "title"}}Amtrak Route Map — {{siteName}}{{end}}
+{{define "title"}}Passenger Rail Route Map | {{siteName}}{{end}}
 {{define "head"}}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css">
 <style>
@@ -42,6 +42,10 @@
 </style>
 {{end}}
 {{define "content"}}
+<p class="independence-notice" style="padding:.4rem 1rem 0;font-size:.75rem;color:var(--muted)">
+  Routes and trains operated by Amtrak.<br>
+  Independent railfan information. Not affiliated with or endorsed by Amtrak.
+</p>
 <div id="map-wrap">
   <div id="amtrak-map"></div>
   <div id="map-loading">Loading route map…</div>

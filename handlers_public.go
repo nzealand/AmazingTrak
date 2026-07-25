@@ -234,7 +234,7 @@ func (app *App) handleMap(w http.ResponseWriter, r *http.Request) {
 		LiveTrains bool
 	}
 	app.renderPublic(w, r, "map.html", publicPage{
-		Title: "Amtrak Route Map — AmazingTrak",
+		Title: "Passenger Rail Route Map | AmazingTrak",
 		Data: mapData{
 			Corridors:  corridors,
 			LiveTrains: app.liveTrainsEnabled(),
