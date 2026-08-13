@@ -158,6 +158,66 @@ function findCorridorSlug(name) {
   overlays['Vantage spots'] = vantageLayer;
   L.control.layers(null, overlays, { collapsed: false, position: 'topright' }).addTo(map);
 
+  // ---- "My location" control ----
+  var meLayer = L.layerGroup().addTo(map);
+  var LocateControl = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function() {
+      var container = L.DomUtil.create('div', 'leaflet-bar');
+      var btn = L.DomUtil.create('a', '', container);
+      btn.href = '#';
+      btn.title = 'Show my location';
+      btn.innerHTML = '📍';
+      btn.style.fontSize = '16px';
+      btn.style.display = 'flex';
+      btn.style.alignItems = 'center';
+      btn.style.justifyContent = 'center';
+      L.DomEvent.disableClickPropagation(container);
+      L.DomEvent.on(btn, 'click', function(e) {
+        L.DomEvent.preventDefault(e);
+        locateMe(btn);
+      });
+      return container;
+    }
+  });
+  map.addControl(new LocateControl());
+
+  function locateMe(btn) {
+    if (!navigator.geolocation) {
+      alert('Your browser does not support geolocation.');
+      return;
+    }
+    var original = btn.innerHTML;
+    btn.innerHTML = '…';
+    navigator.geolocation.getCurrentPosition(function(pos) {
+      btn.innerHTML = original;
+      var lat = pos.coords.latitude, lon = pos.coords.longitude;
+      meLayer.clearLayers();
+      L.circleMarker([lat, lon], {
+        radius: 8,
+        color: '#fff',
+        weight: 2,
+        fillColor: '#4361ee',
+        fillOpacity: 1
+      }).bindPopup('You are here').addTo(meLayer).openPopup();
+      L.circle([lat, lon], {
+        radius: pos.coords.accuracy,
+        color: '#4361ee',
+        weight: 1,
+        fillColor: '#4361ee',
+        fillOpacity: .1
+      }).addTo(meLayer);
+      map.setView([lat, lon], 10);
+    }, function(err) {
+      btn.innerHTML = original;
+      if (err.code === err.PERMISSION_DENIED) {
+        alert('Location access was denied. Enable it in your browser settings to see your position on the map.');
+      } else {
+        alert('Could not determine your location.');
+      }
+    }, { enableHighAccuracy: false, timeout: 10000 });
+  }
+
   // ---- Vantage spots (submitted good photo/video locations, off by default) ----
   fetch('/api/vantage-spots')
     .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
