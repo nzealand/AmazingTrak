@@ -6,6 +6,8 @@
   var t = getCookie('theme');
   if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
   else if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  else if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', 'dark'); // no preference set yet — default to dark
 })();
 
 function setTheme(t) {
