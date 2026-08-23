@@ -105,7 +105,7 @@ function findCorridorSlug(name) {
 
   var routeLayer = L.layerGroup().addTo(map);
   var trainLayer = L.layerGroup().addTo(map);
-  var vantageLayer = L.layerGroup(); // off by default — not added to map
+  var vantageLayer = L.layerGroup().addTo(map);
 
   var loading = document.getElementById('map-loading');
 
@@ -234,7 +234,7 @@ function findCorridorSlug(name) {
           radius: 7,
           color: '#fff',
           weight: 2,
-          fillColor: '#264653',
+          fillColor: '#06aed5',
           fillOpacity: 1
         }).bindPopup(popup).addTo(vantageLayer);
       });
