@@ -256,6 +256,7 @@ function findCorridorSlug(name) {
   function trainPopup(t) {
     var veryLate = t.delayMin > 60;
     var html = '<strong style="font-size:.9rem">' + esc(t.displayName) + (veryLate ? ' 💀' : '') + '</strong>';
+    if (t.corridorName) html += '<br><span style="font-size:.8rem">' + esc(t.corridorName) + '</span>';
     html += '<br><span style="font-size:.8rem;color:' + (veryLate ? '#000' : STATUS_COLOR[t.status]) + '">' +
             esc(delayText(t.delayMin)) + '</span>';
     if (t.speed > 0) html += '<span style="font-size:.8rem"> · ' + t.speed + ' mph ' + esc(t.heading) + '</span>';
@@ -277,7 +278,7 @@ function findCorridorSlug(name) {
         trains.forEach(function(t) {
           var veryLate = t.delayMin > 60;
           var bg = veryLate ? '#000' : (STATUS_COLOR[t.status] || '#457b9d');
-          var label = veryLate ? '💀' : esc(String(t.trainNum));
+          var label = veryLate ? '💀 ' + esc(String(t.trainNum)) : esc(String(t.trainNum));
           var icon = L.divIcon({
             className: '',
             html: '<div class="train-num-marker" style="background:' + bg + '">' + label + '</div>',
