@@ -8,7 +8,7 @@
 </div>
 {{if $d.Spots}}
 <table class="admin-table">
-  <thead><tr><th>Title</th><th>Location</th><th>Media</th><th>Notes</th><th>Status</th><th>Submitted</th><th style="width:22%">Actions</th></tr></thead>
+  <thead><tr><th>Title</th><th>Location</th><th>Media</th><th>Notes</th><th>Status</th><th>Added by</th><th>Submitted</th><th>IP hash</th><th style="width:22%">Actions</th></tr></thead>
   <tbody>
     {{range $d.Spots}}
     <tr>
@@ -23,7 +23,9 @@
       </td>
       <td style="max-width:220px;font-size:.85rem;color:var(--muted)">{{if .Caption}}{{truncate .Caption 100}}{{else}}—{{end}}</td>
       <td><span class="status-badge status-{{.Status}}">{{.Status}}</span></td>
+      <td style="font-size:.8rem;color:var(--muted)">Anonymous</td>
       <td style="font-size:.8rem;color:var(--muted)">{{.CreatedAt}}</td>
+      <td style="font-size:.75rem;color:var(--muted);font-family:monospace">{{if .SubmitterIPHash}}{{truncate .SubmitterIPHash 12}}{{else}}—{{end}}</td>
       <td>
         {{if eq .Status "pending"}}
         <div style="display:flex;gap:.3rem;align-items:flex-start;flex-wrap:wrap">
