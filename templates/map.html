@@ -216,9 +216,27 @@ function findCorridorSlug(name) {
 
   mapTileLayer(L).addTo(map);
 
-  var routeLayer = L.layerGroup().addTo(map);
-  var trainLayer = L.layerGroup().addTo(map);
-  var vantageLayer = L.layerGroup().addTo(map);
+  // Sticky layer visibility: Route lines / Live trains / Vantage spots each
+  // remember their on/off state across reloads, keyed by the same name shown
+  // in the layer control. Wrapped in try/catch like the locate-me sticky
+  // state above, since localStorage can throw in private browsing.
+  var LAYER_PREFS_KEY = 'amazingtrak-map-layers';
+  var layerPrefs = {};
+  try {
+    var rawLayerPrefs = localStorage.getItem(LAYER_PREFS_KEY);
+    if (rawLayerPrefs) layerPrefs = JSON.parse(rawLayerPrefs);
+  } catch (e) {}
+
+  function layerOn(name) {
+    return layerPrefs[name] !== false;
+  }
+
+  var routeLayer = L.layerGroup();
+  var trainLayer = L.layerGroup();
+  var vantageLayer = L.layerGroup();
+  if (layerOn('Route lines')) routeLayer.addTo(map);
+  if (layerOn('Live trains')) trainLayer.addTo(map);
+  if (layerOn('Vantage spots')) vantageLayer.addTo(map);
 
   var loading = document.getElementById('map-loading');
 
@@ -274,6 +292,15 @@ function findCorridorSlug(name) {
   if (LIVE_TRAINS_ENABLED) overlays['Live trains'] = trainLayer;
   overlays['Vantage spots'] = vantageLayer;
   L.control.layers(null, overlays, { collapsed: false, position: 'topright' }).addTo(map);
+
+  map.on('overlayadd', function(e) {
+    layerPrefs[e.name] = true;
+    try { localStorage.setItem(LAYER_PREFS_KEY, JSON.stringify(layerPrefs)); } catch (err) {}
+  });
+  map.on('overlayremove', function(e) {
+    layerPrefs[e.name] = false;
+    try { localStorage.setItem(LAYER_PREFS_KEY, JSON.stringify(layerPrefs)); } catch (err) {}
+  });
 
   // ---- "My location" control ----
   // Sticky across reloads: once located, we remember that in localStorage
