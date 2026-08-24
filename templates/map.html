@@ -460,6 +460,67 @@ function findCorridorSlug(name) {
     });
   }
 
+  // Applies one train's live data to trainState and its marker — shared by
+  // the all-trains batch poll and the tighter single-train poll for
+  // whichever marker's popup is currently open, so both stay in sync with
+  // the same physics (dead reckoning, segment speed) and never drift apart.
+  function applyLiveTrain(t, now) {
+    var prev = trainState[t.trainSlug];
+    var fixTime = t.lastUpdated ? new Date(t.lastUpdated).getTime() : NaN;
+    if (isNaN(fixTime)) fixTime = now;
+    var fixPoint = [t.lat, t.lon];
+
+    var speedMps = mphToMps(t.speed);
+    if (ENABLE_SEGMENT_SPEED && prev && prev.fixTime && fixTime > prev.fixTime) {
+      var observed = haversine(prev.fixPoint, fixPoint) / ((fixTime - prev.fixTime) / 1000);
+      if (isFinite(observed) && observed < MAX_PLAUSIBLE_MPS) speedMps = observed;
+    }
+
+    var line = null, lineTotal = 0, arcLen = 0, forward = 1;
+    if (ENABLE_DEAD_RECKONING) {
+      var lines = ROUTE_LINES[t.corridorSlug];
+      var snap = lines ? nearestOnLines(fixPoint, lines) : null;
+      if (snap && snap.distMeters < MAX_SNAP_DIST_METERS) {
+        line = snap.line;
+        lineTotal = cachedLineLength(line);
+        arcLen = snap.arcLen;
+        var localBearing = segmentBearing(line, snap.segIndex);
+        var heading = COMPASS_DEG[t.heading];
+        forward = (heading == null || angleDiff(heading, localBearing) <= 90) ? 1 : -1;
+      }
+    }
+
+    var marker = prev && prev.marker;
+    if (!marker) {
+      marker = L.marker(fixPoint, { icon: markerIcon(t) });
+      marker.bindPopup(function() { return trainPopup(t.trainSlug); });
+      // Poll just this train, on the same cadence as the batch refresh,
+      // for as long as its popup stays open — cheaper and fresher than
+      // waiting on the next full-snapshot poll to update what's on screen.
+      marker.on('popupopen', function() {
+        selectedSlug = t.trainSlug;
+        pollSelectedTrain();
+      });
+      marker.on('popupclose', function() {
+        if (selectedSlug === t.trainSlug) selectedSlug = null;
+      });
+      marker.addTo(trainLayer);
+    } else {
+      marker.setIcon(markerIcon(t));
+      marker.setLatLng(fixPoint);
+    }
+
+    trainState[t.trainSlug] = {
+      t: t, marker: marker, line: line, lineTotal: lineTotal, arcLen: arcLen,
+      forward: forward, speedMps: speedMps, fixTime: fixTime, fixPoint: fixPoint,
+      guessing: false
+    };
+
+    // Keep an already-open popup's content current rather than waiting for
+    // the viewer to close and reopen it.
+    if (marker.isPopupOpen()) marker.setPopupContent(trainPopup(t.trainSlug));
+  }
+
   function refreshTrains() {
     fetch('/api/live-trains')
       .then(function(r) {
@@ -473,46 +534,7 @@ function findCorridorSlug(name) {
 
         trains.forEach(function(t) {
           seen[t.trainSlug] = true;
-          var prev = trainState[t.trainSlug];
-          var fixTime = t.lastUpdated ? new Date(t.lastUpdated).getTime() : NaN;
-          if (isNaN(fixTime)) fixTime = now;
-          var fixPoint = [t.lat, t.lon];
-
-          var speedMps = mphToMps(t.speed);
-          if (ENABLE_SEGMENT_SPEED && prev && prev.fixTime && fixTime > prev.fixTime) {
-            var observed = haversine(prev.fixPoint, fixPoint) / ((fixTime - prev.fixTime) / 1000);
-            if (isFinite(observed) && observed < MAX_PLAUSIBLE_MPS) speedMps = observed;
-          }
-
-          var line = null, lineTotal = 0, arcLen = 0, forward = 1;
-          if (ENABLE_DEAD_RECKONING) {
-            var lines = ROUTE_LINES[t.corridorSlug];
-            var snap = lines ? nearestOnLines(fixPoint, lines) : null;
-            if (snap && snap.distMeters < MAX_SNAP_DIST_METERS) {
-              line = snap.line;
-              lineTotal = cachedLineLength(line);
-              arcLen = snap.arcLen;
-              var localBearing = segmentBearing(line, snap.segIndex);
-              var heading = COMPASS_DEG[t.heading];
-              forward = (heading == null || angleDiff(heading, localBearing) <= 90) ? 1 : -1;
-            }
-          }
-
-          var marker = prev && prev.marker;
-          if (!marker) {
-            marker = L.marker(fixPoint, { icon: markerIcon(t) });
-            marker.bindPopup(function() { return trainPopup(t.trainSlug); });
-            marker.addTo(trainLayer);
-          } else {
-            marker.setIcon(markerIcon(t));
-            marker.setLatLng(fixPoint);
-          }
-
-          trainState[t.trainSlug] = {
-            t: t, marker: marker, line: line, lineTotal: lineTotal, arcLen: arcLen,
-            forward: forward, speedMps: speedMps, fixTime: fixTime, fixPoint: fixPoint,
-            guessing: false
-          };
+          applyLiveTrain(t, now);
         });
 
         // Drop markers for trains no longer running.
@@ -531,6 +553,22 @@ function findCorridorSlug(name) {
       .catch(function(err) {
         if (statusEl) statusEl.textContent = 'Live train data unavailable';
         console.error('Live trains error:', err);
+      });
+  }
+
+  // trainSlug of whichever marker's popup is currently open, or null.
+  var selectedSlug = null;
+
+  function pollSelectedTrain() {
+    if (!selectedSlug) return;
+    fetch('/api/live-trains/' + encodeURIComponent(selectedSlug))
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(t) { applyLiveTrain(t, Date.now()); })
+      .catch(function(err) {
+        console.error('Live train refresh error:', err);
       });
   }
 
@@ -553,6 +591,7 @@ function findCorridorSlug(name) {
   // Matches the server's own poll interval (admin-configurable, Settings →
   // Live Train Positions) — no point polling our API faster than it refreshes.
   setInterval(refreshTrains, POLL_MS);
+  setInterval(pollSelectedTrain, POLL_MS);
   setInterval(animationTick, TICK_MS);
 })();
 </script>

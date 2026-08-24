@@ -389,3 +389,19 @@ func (app *App) handleLiveTrains(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=30")
 	json.NewEncoder(w).Encode(snap)
 }
+
+// handleLiveTrain serves the cached data for one train, matched by slug, so a
+// client that only cares about a single selected train doesn't need to
+// re-fetch and re-diff the whole snapshot every poll. Returns 404 for a
+// disabled feature, a stale cache, or a train not currently running — the
+// client doesn't need to distinguish those cases.
+func (app *App) handleLiveTrain(w http.ResponseWriter, r *http.Request) {
+	t := app.findLiveTrain(r.PathValue("slug"))
+	if t == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=30")
+	json.NewEncoder(w).Encode(t)
+}
