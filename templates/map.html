@@ -276,7 +276,31 @@ function findCorridorSlug(name) {
   L.control.layers(null, overlays, { collapsed: false, position: 'topright' }).addTo(map);
 
   // ---- "My location" control ----
+  // Sticky across reloads: once located, we remember that in localStorage
+  // and re-locate + re-center automatically on the next page load, until the
+  // user turns it off by clicking the button again or clicking the pin
+  // itself. Wrapped in try/catch since localStorage can throw (private
+  // browsing, disabled site data) — a locate feature failing to persist
+  // shouldn't take the rest of the page's script down with it.
+  var LOCATE_KEY = 'amazingtrak-map-locate-me';
   var meLayer = L.layerGroup().addTo(map);
+  var locateBtn = null;
+  var locateActive = false;
+
+  function setLocateActive(active) {
+    locateActive = active;
+    try {
+      if (active) localStorage.setItem(LOCATE_KEY, '1');
+      else localStorage.removeItem(LOCATE_KEY);
+    } catch (e) {}
+    if (locateBtn) locateBtn.style.opacity = active ? '1' : '.55';
+  }
+
+  function clearLocate() {
+    meLayer.clearLayers();
+    setLocateActive(false);
+  }
+
   var LocateControl = L.Control.extend({
     options: { position: 'topright' },
     onAdd: function() {
@@ -289,11 +313,17 @@ function findCorridorSlug(name) {
       btn.style.display = 'flex';
       btn.style.alignItems = 'center';
       btn.style.justifyContent = 'center';
+      btn.style.opacity = '.55';
       L.DomEvent.disableClickPropagation(container);
       L.DomEvent.on(btn, 'click', function(e) {
         L.DomEvent.preventDefault(e);
-        locateMe(btn);
+        if (locateActive) {
+          clearLocate();
+        } else {
+          locateMe(btn);
+        }
       });
+      locateBtn = btn;
       return container;
     }
   });
@@ -310,13 +340,14 @@ function findCorridorSlug(name) {
       btn.innerHTML = original;
       var lat = pos.coords.latitude, lon = pos.coords.longitude;
       meLayer.clearLayers();
-      L.circleMarker([lat, lon], {
+      var marker = L.circleMarker([lat, lon], {
         radius: 8,
         color: '#fff',
         weight: 2,
         fillColor: '#4361ee',
         fillOpacity: 1
-      }).bindPopup('You are here').addTo(meLayer).openPopup();
+      }).bindPopup('You are here (click pin to stop remembering)').addTo(meLayer).openPopup();
+      marker.on('click', clearLocate);
       L.circle([lat, lon], {
         radius: pos.coords.accuracy,
         color: '#4361ee',
@@ -325,8 +356,10 @@ function findCorridorSlug(name) {
         fillOpacity: .1
       }).addTo(meLayer);
       map.setView([lat, lon], 10);
+      setLocateActive(true);
     }, function(err) {
       btn.innerHTML = original;
+      setLocateActive(false);
       if (err.code === err.PERMISSION_DENIED) {
         alert('Location access was denied. Enable it in your browser settings to see your position on the map.');
       } else {
@@ -334,6 +367,10 @@ function findCorridorSlug(name) {
       }
     }, { enableHighAccuracy: false, timeout: 10000 });
   }
+
+  var wasLocateActive = false;
+  try { wasLocateActive = localStorage.getItem(LOCATE_KEY) === '1'; } catch (e) {}
+  if (wasLocateActive) locateMe(locateBtn);
 
   // ---- Vantage spots (submitted good photo/video locations, off by default) ----
   fetch('/api/vantage-spots')
@@ -476,15 +513,30 @@ function findCorridorSlug(name) {
 
     var speedMph = st.speedMps != null ? Math.round(mpsToMph(st.speedMps)) : t.speed;
     var arrow = COMPASS_ARROW[t.heading] || '';
-    var guessNote = '';
-    if (st.holding && t.nextStation) {
-      guessNote = ' <span style="color:var(--muted)">(likely holding at ' + esc(t.nextStation) + ')</span>';
-    } else if (st.guessing) {
-      guessNote = ' <span style="color:var(--muted)">(estimated position)</span>';
-    }
+    var guessNote = st.guessing ? ' <span style="color:var(--muted)">(estimated position)</span>' : '';
     html += '<br><span style="font-size:.8rem">' + speedMph + ' mph ' + arrow + ' ' + esc(t.heading) + guessNote + '</span>';
 
-    if (t.nextStation) {
+    // Never name a station as "Next" once the train is there: upstream
+    // confirming it (currentStation) beats our own dead-reckoning guessing
+    // it (st.holding) beats the normal en-route case — each shows what's
+    // genuinely still ahead instead.
+    if (t.currentStation) {
+      html += '<br><span style="font-size:.8rem">Now at ' + esc(t.currentStation);
+      if (t.currentDeparture) html += ' <span style="color:var(--muted)">· leaves ~' + fmtTime(t.currentDeparture) + '</span>';
+      html += '</span>';
+      if (t.nextStation) {
+        html += '<br><span style="font-size:.8rem">Next: ' + esc(t.nextStation);
+        if (t.nextEta) html += ' ~' + fmtTime(t.nextEta);
+        html += '</span>';
+      }
+    } else if (st.holding && t.nextStation) {
+      html += '<br><span style="font-size:.8rem;color:var(--muted)">Likely at ' + esc(t.nextStation) + '</span>';
+      if (t.nextStation2) {
+        html += '<br><span style="font-size:.8rem">Next: ' + esc(t.nextStation2);
+        if (t.nextEta2) html += ' ~' + fmtTime(t.nextEta2);
+        html += '</span>';
+      }
+    } else if (t.nextStation) {
       html += '<br><span style="font-size:.8rem">Next: ' + esc(t.nextStation);
       if (t.nextEta) html += ' ~' + fmtTime(t.nextEta);
       html += '</span>';

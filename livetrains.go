@@ -32,23 +32,33 @@ const (
 	liveMaxAge = 15 * time.Minute
 )
 
+// amtrakerStation is one stop in a train's upstream station list, in route
+// order. "Departed" means the train has left it; "Station" means the train
+// is physically there right now; anything else ("Enroute") means still
+// approaching. Arr/Dep are upstream's own continuously re-estimated
+// predictions for that stop (not just the static schedule) — they settle
+// down to the real observed time once the train actually arrives/departs.
+type amtrakerStation struct {
+	Name   string `json:"name"`
+	Code   string `json:"code"`
+	SchArr string `json:"schArr"`
+	Arr    string `json:"arr"`
+	SchDep string `json:"schDep"`
+	Dep    string `json:"dep"`
+	Status string `json:"status"`
+}
+
 // amtrakerTrain is the subset of the upstream payload we consume.
 type amtrakerTrain struct {
-	TrainNum   string  `json:"trainNum"`
-	RouteName  string  `json:"routeName"`
-	Lat        float64 `json:"lat"`
-	Lon        float64 `json:"lon"`
-	Heading    string  `json:"heading"`
-	Velocity   float64 `json:"velocity"`
-	TrainState string  `json:"trainState"`
-	LastValTS  string  `json:"lastValTS"`
-	Stations   []struct {
-		Name   string `json:"name"`
-		Code   string `json:"code"`
-		SchArr string `json:"schArr"`
-		Arr    string `json:"arr"`
-		Status string `json:"status"`
-	} `json:"stations"`
+	TrainNum   string            `json:"trainNum"`
+	RouteName  string            `json:"routeName"`
+	Lat        float64           `json:"lat"`
+	Lon        float64           `json:"lon"`
+	Heading    string            `json:"heading"`
+	Velocity   float64           `json:"velocity"`
+	TrainState string            `json:"trainState"`
+	LastValTS  string            `json:"lastValTS"`
+	Stations   []amtrakerStation `json:"stations"`
 }
 
 // liveTrain is what we hand to the map. Every one of these corresponds to a
@@ -70,6 +80,18 @@ type liveTrain struct {
 	// (upstream's "arr" field for a not-yet-departed station is a running
 	// estimate, not just the static schedule) — RFC3339, empty if unknown.
 	NextETA string `json:"nextEta,omitempty"`
+	// NextStation2/NextETA2 are the station after NextStation, and its own
+	// predicted arrival — so a client that's showing/guessing the train has
+	// already reached NextStation can display what's coming up after it
+	// instead of continuing to name a station it's already at.
+	NextStation2 string `json:"nextStation2,omitempty"`
+	NextETA2     string `json:"nextEta2,omitempty"`
+	// CurrentStation/CurrentDeparture are set only when upstream confirms
+	// (status "Station") the train is physically stopped there right now.
+	// CurrentDeparture is upstream's own live-updated predicted departure —
+	// same idea as NextETA, just for leaving instead of arriving.
+	CurrentStation   string `json:"currentStation,omitempty"`
+	CurrentDeparture string `json:"currentDeparture,omitempty"`
 	// LastUpdated is when this train's position was last actually refreshed
 	// upstream (RFC3339) — distinct from our own poll cadence.
 	LastUpdated string `json:"lastUpdated,omitempty"`
@@ -167,30 +189,62 @@ func matchTrain(index map[string][]dbTrain, lt amtrakerTrain) (dbTrain, bool) {
 	return dbTrain{}, false
 }
 
-// delayFor returns minutes late (negative = early) at the next station the train
-// has not yet departed, plus that station's name.
-// delayFor returns the train's current delay in minutes, the name of the
-// next station it hasn't reached yet, and upstream's live-updated predicted
-// arrival time there (its "arr" field, which upstream keeps re-estimating
-// for a station until the train actually departs it — not just the static
-// schedule).
-func delayFor(lt amtrakerTrain) (delayMin int, nextName string, nextETA string) {
+// stationProgress is what stationsInfo derives from a train's upstream
+// station list: how late it's running, where it's confirmed stopped right
+// now (if anywhere), and the next one or two stations still ahead.
+type stationProgress struct {
+	delayMin         int
+	currentStation   string // "" unless upstream confirms (status "Station") the train is here right now
+	currentDeparture string // upstream's live-updated predicted departure from currentStation
+	nextStation      string
+	nextETA          string
+	nextStation2     string
+	nextETA2         string
+}
+
+// stationsInfo walks a train's upstream station list (route order) past any
+// already-departed stops, then classifies what's left: a "Station"-status
+// entry means the train is physically there right now (currentStation, not
+// "next"), everything after that is upcoming. Delay is measured against
+// whichever stop is immediately at/ahead of the train, matching how upstream
+// itself frames lateness.
+func stationsInfo(lt amtrakerTrain) stationProgress {
+	var out stationProgress
+
+	var upcoming []amtrakerStation
 	for _, st := range lt.Stations {
-		if st.Status == "Departed" {
-			continue
+		if st.Status != "Departed" {
+			upcoming = append(upcoming, st)
 		}
-		nextETA = st.Arr
-		if st.SchArr == "" || st.Arr == "" {
-			return 0, st.Name, nextETA
-		}
-		sch, err1 := time.Parse(time.RFC3339, st.SchArr)
-		act, err2 := time.Parse(time.RFC3339, st.Arr)
-		if err1 != nil || err2 != nil {
-			return 0, st.Name, nextETA
-		}
-		return int(act.Sub(sch).Minutes()), st.Name, nextETA
 	}
-	return 0, "", ""
+	if len(upcoming) == 0 {
+		return out
+	}
+
+	first := upcoming[0]
+	if first.SchArr != "" && first.Arr != "" {
+		sch, err1 := time.Parse(time.RFC3339, first.SchArr)
+		act, err2 := time.Parse(time.RFC3339, first.Arr)
+		if err1 == nil && err2 == nil {
+			out.delayMin = int(act.Sub(sch).Minutes())
+		}
+	}
+
+	idx := 0
+	if first.Status == "Station" {
+		out.currentStation = first.Name
+		out.currentDeparture = first.Dep
+		idx = 1
+	}
+	if idx < len(upcoming) {
+		out.nextStation = upcoming[idx].Name
+		out.nextETA = upcoming[idx].Arr
+	}
+	if idx+1 < len(upcoming) {
+		out.nextStation2 = upcoming[idx+1].Name
+		out.nextETA2 = upcoming[idx+1].Arr
+	}
+	return out
 }
 
 // delayStatus buckets lateness for map marker coloring.
@@ -254,22 +308,26 @@ func fetchLiveTrains(app *App) ([]liveTrain, error) {
 			if !ok {
 				continue
 			}
-			delay, next, nextETA := delayFor(lt)
+			prog := stationsInfo(lt)
 			out = append(out, liveTrain{
-				TrainNum:     lt.TrainNum,
-				DisplayName:  match.DisplayName,
-				TrainSlug:    match.Slug,
-				CorridorName: match.CorridorName,
-				CorridorSlug: match.CorridorSlug,
-				Lat:          lt.Lat,
-				Lon:          lt.Lon,
-				Heading:      lt.Heading,
-				Speed:        int(lt.Velocity + 0.5),
-				DelayMin:     delay,
-				Status:       delayStatus(delay),
-				NextStation:  next,
-				NextETA:      nextETA,
-				LastUpdated:  lt.LastValTS,
+				TrainNum:         lt.TrainNum,
+				DisplayName:      match.DisplayName,
+				TrainSlug:        match.Slug,
+				CorridorName:     match.CorridorName,
+				CorridorSlug:     match.CorridorSlug,
+				Lat:              lt.Lat,
+				Lon:              lt.Lon,
+				Heading:          lt.Heading,
+				Speed:            int(lt.Velocity + 0.5),
+				DelayMin:         prog.delayMin,
+				Status:           delayStatus(prog.delayMin),
+				NextStation:      prog.nextStation,
+				NextETA:          prog.nextETA,
+				NextStation2:     prog.nextStation2,
+				NextETA2:         prog.nextETA2,
+				CurrentStation:   prog.currentStation,
+				CurrentDeparture: prog.currentDeparture,
+				LastUpdated:      lt.LastValTS,
 			})
 		}
 	}
