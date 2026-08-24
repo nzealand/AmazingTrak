@@ -685,6 +685,13 @@ func main() {
 	if err := seedDB(db, adminUsername, adminPassword); err != nil {
 		log.Fatal("seedDB:", err)
 	}
+	// Re-run after seeding: runMigrations (inside openDB, above) executes
+	// before seedDB, so on a brand new database the first pass finds no stops
+	// rows yet to backfill coordinates onto. Idempotent, so this is a no-op
+	// on an already-seeded (e.g. production) database.
+	if err := migrateStopCoordinates(db); err != nil {
+		log.Fatal("migrateStopCoordinates:", err)
+	}
 
 	if prefs, err := getSitePrefs(db); err == nil {
 		if prefs.SiteName != "" {
@@ -759,6 +766,7 @@ func main() {
 	mux.HandleFunc("GET /api/amtrak-routes", app.handleAmtrakRoutes)
 	mux.HandleFunc("GET /api/live-trains", app.handleLiveTrains)
 	mux.HandleFunc("GET /api/live-trains/{slug}", app.handleLiveTrain)
+	mux.HandleFunc("GET /api/trains/{slug}/stops", app.handleTrainStopsAPI)
 	mux.HandleFunc("GET /api/vantage-spots", app.handleVantageSpotsAPI)
 	mux.HandleFunc("GET /vantage-spots/suggest", app.handleVantageSpotForm)
 	mux.HandleFunc("POST /vantage-spots/suggest", app.handleVantageSpotSubmit)

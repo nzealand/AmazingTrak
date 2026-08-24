@@ -546,6 +546,42 @@ func (app *App) handleTrain(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// trainStopPoint is one stop's geometry, as consumed by the map's client-side
+// position guessing (it snaps these onto the route line to find the two
+// stations bracketing a train's dead-reckoned position).
+type trainStopPoint struct {
+	Name string  `json:"name"`
+	Lat  float64 `json:"lat"`
+	Lon  float64 `json:"lon"`
+}
+
+// handleTrainStopsAPI serves a train's ordered stop coordinates. This is
+// static schedule data (it only changes when a conductor edits the stop
+// list), so the map fetches it once per train rather than on every live-poll
+// tick, and it's cached hard client- and proxy-side.
+func (app *App) handleTrainStopsAPI(w http.ResponseWriter, r *http.Request) {
+	train, err := trainBySlug(app.db, r.PathValue("slug"))
+	if err != nil || !train.IsActive {
+		http.NotFound(w, r)
+		return
+	}
+	stops, err := stopsByTrainID(app.db, train.ID)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	out := make([]trainStopPoint, 0, len(stops))
+	for _, s := range stops {
+		if !s.Latitude.Valid || !s.Longitude.Valid {
+			continue
+		}
+		out = append(out, trainStopPoint{Name: s.StopName, Lat: s.Latitude.Float64, Lon: s.Longitude.Float64})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	json.NewEncoder(w).Encode(map[string]any{"stops": out})
+}
+
 func (app *App) handleSuggestForm(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	train, err := trainBySlug(app.db, slug)

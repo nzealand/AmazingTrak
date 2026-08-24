@@ -399,8 +399,52 @@ function findCorridorSlug(name) {
   var STATUS_COLOR = { ontime: '#2a893d', late: '#f4a261', verylate: '#c60c2c' };
   var statusEl = document.getElementById('map-live-status');
   // trainSlug -> { t, marker, line, lineTotal, arcLen, forward, speedMps,
-  //                fixTime, fixPoint, guessing }
+  //                fixTime, fixPoint, guessing, prevArc, nextArc, holding }
   var trainState = {};
+
+  // trainSlug -> array of [lat,lon] for that train's scheduled stops, used to
+  // bracket the dead-reckoned position between the two stations it's
+  // currently between so extrapolation eases into a stop instead of blowing
+  // through it. Fetched once per train (this is static schedule data) rather
+  // than on every live-poll tick. `[]` means "fetched, but nothing usable
+  // came back" so we don't refetch every poll; absent means "not yet asked".
+  var stopCache = {};
+  function ensureStopsLoaded(slug) {
+    if (stopCache[slug]) return;
+    stopCache[slug] = [];
+    fetch('/api/trains/' + encodeURIComponent(slug) + '/stops')
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(data) {
+        stopCache[slug] = (data.stops || []).map(function(s) { return [s.lat, s.lon]; });
+      })
+      .catch(function(err) { console.error('Train stops error:', err); });
+  }
+
+  // Finds the arc lengths, along `line`, of the nearest stop(s) bracketing
+  // `currentArc` in the direction of travel (`forward`) — i.e. the station
+  // just departed and the one coming up. Either side can come back null (a
+  // stop's coordinates are missing, or the train is beyond the mapped set on
+  // that side) — callers use whichever they get. Returns null only when
+  // neither side resolved, so they can fall back further.
+  function stopArcBounds(line, stops, currentArc, forward) {
+    var arcs = [];
+    (stops || []).forEach(function(pt) {
+      var r = nearestOnLines(pt, [line]);
+      if (r && r.distMeters <= MAX_SNAP_DIST_METERS) arcs.push(r.arcLen);
+    });
+    var prevArc = null, nextArc = null;
+    arcs.forEach(function(a) {
+      if (forward === -1) {
+        if (a >= currentArc && (prevArc == null || a < prevArc)) prevArc = a;
+        if (a < currentArc && (nextArc == null || a > nextArc)) nextArc = a;
+      } else {
+        if (a <= currentArc && (prevArc == null || a > prevArc)) prevArc = a;
+        if (a > currentArc && (nextArc == null || a < nextArc)) nextArc = a;
+      }
+    });
+    if (prevArc == null && nextArc == null) return null;
+    return { prevArc: prevArc, nextArc: nextArc };
+  }
 
   function delayText(min) {
     if (min > 1) return min + ' min late';
@@ -432,8 +476,13 @@ function findCorridorSlug(name) {
 
     var speedMph = st.speedMps != null ? Math.round(mpsToMph(st.speedMps)) : t.speed;
     var arrow = COMPASS_ARROW[t.heading] || '';
-    html += '<br><span style="font-size:.8rem">' + speedMph + ' mph ' + arrow + ' ' + esc(t.heading) +
-            (st.guessing ? ' <span style="color:var(--muted)">(estimated position)</span>' : '') + '</span>';
+    var guessNote = '';
+    if (st.holding && t.nextStation) {
+      guessNote = ' <span style="color:var(--muted)">(likely holding at ' + esc(t.nextStation) + ')</span>';
+    } else if (st.guessing) {
+      guessNote = ' <span style="color:var(--muted)">(estimated position)</span>';
+    }
+    html += '<br><span style="font-size:.8rem">' + speedMph + ' mph ' + arrow + ' ' + esc(t.heading) + guessNote + '</span>';
 
     if (t.nextStation) {
       html += '<br><span style="font-size:.8rem">Next: ' + esc(t.nextStation);
@@ -470,6 +519,8 @@ function findCorridorSlug(name) {
     if (isNaN(fixTime)) fixTime = now;
     var fixPoint = [t.lat, t.lon];
 
+    ensureStopsLoaded(t.trainSlug);
+
     var speedMps = mphToMps(t.speed);
     if (ENABLE_SEGMENT_SPEED && prev && prev.fixTime && fixTime > prev.fixTime) {
       var observed = haversine(prev.fixPoint, fixPoint) / ((fixTime - prev.fixTime) / 1000);
@@ -477,6 +528,7 @@ function findCorridorSlug(name) {
     }
 
     var line = null, lineTotal = 0, arcLen = 0, forward = 1;
+    var prevArc = null, nextArc = null;
     if (ENABLE_DEAD_RECKONING) {
       var lines = ROUTE_LINES[t.corridorSlug];
       var snap = lines ? nearestOnLines(fixPoint, lines) : null;
@@ -487,6 +539,23 @@ function findCorridorSlug(name) {
         var localBearing = segmentBearing(line, snap.segIndex);
         var heading = COMPASS_DEG[t.heading];
         forward = (heading == null || angleDiff(heading, localBearing) <= 90) ? 1 : -1;
+
+        var bounds = stopArcBounds(line, stopCache[t.trainSlug], arcLen, forward);
+        if (bounds) { prevArc = bounds.prevArc; nextArc = bounds.nextArc; }
+      }
+    }
+
+    // Fallback for when we don't have the next station's coordinates (most
+    // stops don't, yet): Amtrak's own feed still gives us nextEta, a
+    // continuously-updated prediction of when the train reaches it. Capping
+    // extrapolation there stops the marker blowing past the station in time
+    // even though we can't place it exactly at the station in space.
+    var etaElapsedSec = null;
+    if (ENABLE_DEAD_RECKONING && t.nextEta) {
+      var etaTime = new Date(t.nextEta).getTime();
+      if (!isNaN(etaTime)) {
+        var e = (etaTime - fixTime) / 1000;
+        if (e > 0) etaElapsedSec = e;
       }
     }
 
@@ -513,7 +582,8 @@ function findCorridorSlug(name) {
     trainState[t.trainSlug] = {
       t: t, marker: marker, line: line, lineTotal: lineTotal, arcLen: arcLen,
       forward: forward, speedMps: speedMps, fixTime: fixTime, fixPoint: fixPoint,
-      guessing: false
+      guessing: false, prevArc: prevArc, nextArc: nextArc, etaElapsedSec: etaElapsedSec,
+      holding: false
     };
 
     // Keep an already-open popup's content current rather than waiting for
@@ -572,6 +642,17 @@ function findCorridorSlug(name) {
       });
   }
 
+  // Eases a constant-velocity guess so it slows into a station instead of
+  // marching through it: f is how far the naive (unequal-speed) guess is
+  // between the two bracketing stops, smoothstep bends that into a curve
+  // that's slow near both ends (leaving a stop, arriving at the next one)
+  // and fastest crossing the middle — a reasonable stand-in for real
+  // acceleration/braking without needing actual track speed-limit data.
+  function smoothstep(f) {
+    f = Math.max(0, Math.min(1, f));
+    return f * f * (3 - 2 * f);
+  }
+
   function animationTick() {
     if (!ENABLE_LIVE_ANIMATION || !ENABLE_DEAD_RECKONING) return;
     var now = Date.now();
@@ -580,10 +661,51 @@ function findCorridorSlug(name) {
       if (!st.line) return; // no track match for this train — leave it at its real fix
       var elapsedSec = Math.min((now - st.fixTime) / 1000, MAX_EXTRAPOLATE_SEC);
       if (elapsedSec < 1) return;
-      var dist = st.speedMps * elapsedSec * st.forward;
-      var newArc = Math.max(0, Math.min(st.lineTotal, st.arcLen + dist));
+
+      var newArc, holding = false;
+      if (st.nextArc != null && st.etaElapsedSec != null) {
+        // Best case: we know both exactly where the next station is AND
+        // roughly when Amtrak expects the train there. Interpolate straight
+        // from the last real fix (position, time) to that predicted arrival
+        // (position, time), so the guess lands in the right place at the
+        // right time instead of two independently-guessed signals (speed vs.
+        // ETA) drifting apart from each other.
+        var ratio = Math.min(1, elapsedSec / st.etaElapsedSec);
+        newArc = st.arcLen + (st.nextArc - st.arcLen) * smoothstep(ratio);
+        holding = elapsedSec >= st.etaElapsedSec;
+      } else if (st.prevArc != null && st.nextArc != null) {
+        // Know both bracketing stations but don't trust an ETA for this leg
+        // (e.g. the upstream feed didn't have one right now) — ease by
+        // distance between them instead of by time.
+        var rawArc = st.arcLen + st.speedMps * elapsedSec * st.forward;
+        var lo = Math.min(st.prevArc, st.nextArc), hi = Math.max(st.prevArc, st.nextArc);
+        var clamped = Math.max(lo, Math.min(hi, rawArc));
+        var span = st.nextArc - st.prevArc;
+        var f = span !== 0 ? (clamped - st.prevArc) / span : 1;
+        newArc = st.prevArc + smoothstep(f) * span;
+        holding = clamped === st.nextArc;
+      } else if (st.etaElapsedSec != null) {
+        // No usable station coordinates at all, but Amtrak's predicted
+        // arrival time still tells us when to stop advancing. Ease the
+        // *elapsed time* we extrapolate against so speed tapers toward zero
+        // as the predicted arrival approaches, then holds once it passes.
+        var ratio2 = Math.min(1, elapsedSec / st.etaElapsedSec);
+        var effElapsed = st.etaElapsedSec * smoothstep(ratio2);
+        holding = elapsedSec >= st.etaElapsedSec;
+        var rawArc2 = st.arcLen + st.speedMps * effElapsed * st.forward;
+        newArc = Math.max(0, Math.min(st.lineTotal, rawArc2));
+      } else {
+        // Neither: original constant-velocity guess clamped to the route line.
+        var rawArc3 = st.arcLen + st.speedMps * elapsedSec * st.forward;
+        newArc = Math.max(0, Math.min(st.lineTotal, rawArc3));
+      }
+
       st.marker.setLatLng(pointAtArcLength(st.line, newArc));
       st.guessing = true;
+      if (st.holding !== holding) {
+        st.holding = holding;
+        if (st.marker.isPopupOpen()) st.marker.setPopupContent(trainPopup(slug));
+      }
     });
   }
 

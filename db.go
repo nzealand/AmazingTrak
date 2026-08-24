@@ -2,10 +2,23 @@ package main
 
 import (
 	"database/sql"
+	"strconv"
 	"strings"
+
+	_ "embed"
 
 	_ "modernc.org/sqlite"
 )
+
+// station_coords.csv is a one-time reference snapshot (code,lat,lon) pulled
+// from the Amtraker v3 API's /stations endpoint — the same free feed
+// livetrains.go already polls for positions, keyed by the same official
+// Amtrak station codes our own stops.station_code values use. It exists to
+// backfill latitude/longitude on stops seeded without coordinates (see
+// migrateStopCoordinates); it is not fetched at runtime.
+//
+//go:embed station_coords.csv
+var stationCoordsCSV string
 
 func openDB(path string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", path+"?_journal=WAL&_timeout=5000&_fk=true&_synchronous=NORMAL")
@@ -131,6 +144,14 @@ func runMigrations(db *sql.DB) error {
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_suggestions_train_status ON suggestions(train_id, status)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_suggestions_status ON suggestions(status)`)
 	if err := migrateStopSlugs(db); err != nil {
+		return err
+	}
+	// Re-run every startup rather than as a one-shot versioned migration: it's
+	// naturally idempotent (only touches NULL coordinates). Handles the
+	// upgrade case (existing stops rows already seeded long ago); main.go
+	// calls this again after seedDB to also handle a brand new install,
+	// since seeding runs after this point.
+	if err := migrateStopCoordinates(db); err != nil {
 		return err
 	}
 
@@ -276,6 +297,38 @@ func migrateStopSlugs(db *sql.DB) error {
 			slug = slugify(s.name)
 		}
 		db.Exec(`UPDATE stops SET slug=? WHERE id=?`, slug, s.id)
+	}
+	return nil
+}
+
+// migrateStopCoordinates fills in latitude/longitude for any stop whose
+// station_code matches a row in the embedded Amtrak station snapshot and
+// doesn't already have coordinates set — never overwrites a value an admin
+// (or a future editor) has already entered.
+func migrateStopCoordinates(db *sql.DB) error {
+	stmt, err := db.Prepare(`UPDATE stops SET latitude=?, longitude=? WHERE station_code=? AND latitude IS NULL`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, line := range strings.Split(stationCoordsCSV, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) != 3 {
+			continue
+		}
+		lat, err1 := strconv.ParseFloat(parts[1], 64)
+		lon, err2 := strconv.ParseFloat(parts[2], 64)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		if _, err := stmt.Exec(lat, lon, parts[0]); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -155,6 +155,8 @@ type TrainStop struct {
 	StopName           string
 	StationCode        string
 	StopSlug           string
+	Latitude           sql.NullFloat64
+	Longitude          sql.NullFloat64
 }
 
 type SitePreferences struct {
@@ -811,7 +813,7 @@ func stopsByTrainID(db *sql.DB, trainID int64) ([]TrainStop, error) {
 	rows, err := db.Query(`SELECT ts.id, ts.train_id, ts.stop_id, ts.sort_order,
 		COALESCE(ts.scheduled_arrival,''), COALESCE(ts.scheduled_departure,''),
 		ts.runs_weekday, ts.runs_weekend,
-		s.name, COALESCE(s.station_code,''), COALESCE(s.slug,'')
+		s.name, COALESCE(s.station_code,''), COALESCE(s.slug,''), s.latitude, s.longitude
 		FROM train_stops ts JOIN stops s ON s.id=ts.stop_id
 		WHERE ts.train_id=? ORDER BY ts.sort_order`, trainID)
 	if err != nil {
@@ -824,7 +826,8 @@ func stopsByTrainID(db *sql.DB, trainID int64) ([]TrainStop, error) {
 		if err := rows.Scan(&ts.ID, &ts.TrainID, &ts.StopID, &ts.SortOrder,
 			&ts.ScheduledArrival, &ts.ScheduledDeparture,
 			&ts.RunsWeekday, &ts.RunsWeekend,
-			&ts.StopName, &ts.StationCode, &ts.StopSlug); err != nil {
+			&ts.StopName, &ts.StationCode, &ts.StopSlug,
+			&ts.Latitude, &ts.Longitude); err != nil {
 			return nil, err
 		}
 		out = append(out, ts)
