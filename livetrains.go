@@ -34,6 +34,7 @@ type amtrakerTrain struct {
 	Heading    string  `json:"heading"`
 	Velocity   float64 `json:"velocity"`
 	TrainState string  `json:"trainState"`
+	LastValTS  string  `json:"lastValTS"`
 	Stations   []struct {
 		Name   string `json:"name"`
 		Code   string `json:"code"`
@@ -58,6 +59,13 @@ type liveTrain struct {
 	DelayMin     int     `json:"delayMin"`
 	Status       string  `json:"status"` // ontime | late | verylate
 	NextStation  string  `json:"nextStation"`
+	// NextETA is Amtrak's own live-updated predicted arrival at NextStation
+	// (upstream's "arr" field for a not-yet-departed station is a running
+	// estimate, not just the static schedule) — RFC3339, empty if unknown.
+	NextETA string `json:"nextEta,omitempty"`
+	// LastUpdated is when this train's position was last actually refreshed
+	// upstream (RFC3339) — distinct from our own poll cadence.
+	LastUpdated string `json:"lastUpdated,omitempty"`
 }
 
 // liveSnapshot is one poll's worth of matched trains.
@@ -154,22 +162,28 @@ func matchTrain(index map[string][]dbTrain, lt amtrakerTrain) (dbTrain, bool) {
 
 // delayFor returns minutes late (negative = early) at the next station the train
 // has not yet departed, plus that station's name.
-func delayFor(lt amtrakerTrain) (int, string) {
+// delayFor returns the train's current delay in minutes, the name of the
+// next station it hasn't reached yet, and upstream's live-updated predicted
+// arrival time there (its "arr" field, which upstream keeps re-estimating
+// for a station until the train actually departs it — not just the static
+// schedule).
+func delayFor(lt amtrakerTrain) (delayMin int, nextName string, nextETA string) {
 	for _, st := range lt.Stations {
 		if st.Status == "Departed" {
 			continue
 		}
+		nextETA = st.Arr
 		if st.SchArr == "" || st.Arr == "" {
-			return 0, st.Name
+			return 0, st.Name, nextETA
 		}
 		sch, err1 := time.Parse(time.RFC3339, st.SchArr)
 		act, err2 := time.Parse(time.RFC3339, st.Arr)
 		if err1 != nil || err2 != nil {
-			return 0, st.Name
+			return 0, st.Name, nextETA
 		}
-		return int(act.Sub(sch).Minutes()), st.Name
+		return int(act.Sub(sch).Minutes()), st.Name, nextETA
 	}
-	return 0, ""
+	return 0, "", ""
 }
 
 // delayStatus buckets lateness for map marker coloring.
@@ -233,7 +247,7 @@ func fetchLiveTrains(app *App) ([]liveTrain, error) {
 			if !ok {
 				continue
 			}
-			delay, next := delayFor(lt)
+			delay, next, nextETA := delayFor(lt)
 			out = append(out, liveTrain{
 				TrainNum:     lt.TrainNum,
 				DisplayName:  match.DisplayName,
@@ -247,6 +261,8 @@ func fetchLiveTrains(app *App) ([]liveTrain, error) {
 				DelayMin:     delay,
 				Status:       delayStatus(delay),
 				NextStation:  next,
+				NextETA:      nextETA,
+				LastUpdated:  lt.LastValTS,
 			})
 		}
 	}

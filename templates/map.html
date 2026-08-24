@@ -95,6 +95,117 @@ function findCorridorSlug(name) {
     '#264653','#ffd166','#06aed5','#a8dadc','#ffbe0b'
   ];
 
+  // corridorSlug -> array of polylines (each an array of [lat,lon] points),
+  // built from the same route geometry drawn on the map. Used to guess a
+  // moving train's position between polls by snapping it to its track
+  // instead of extrapolating in a straight line.
+  var ROUTE_LINES = {};
+  function extractLines(geometry) {
+    if (!geometry) return [];
+    if (geometry.type === 'LineString') {
+      return [geometry.coordinates.map(function(c) { return [c[1], c[0]]; })];
+    }
+    if (geometry.type === 'MultiLineString') {
+      return geometry.coordinates.map(function(line) {
+        return line.map(function(c) { return [c[1], c[0]]; });
+      });
+    }
+    return [];
+  }
+
+  // ---- Geometry helpers for track-snapped position guessing ----
+  var EARTH_R = 6371000; // meters
+  function toRad(d) { return d * Math.PI / 180; }
+
+  function haversine(a, b) { // [lat,lon] pair -> meters
+    var dLat = toRad(b[0] - a[0]);
+    var dLon = toRad(b[1] - a[1]);
+    var lat1 = toRad(a[0]), lat2 = toRad(b[0]);
+    var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * EARTH_R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  function bearingDeg(a, b) { // [lat,lon] pair -> 0-360
+    var lat1 = toRad(a[0]), lat2 = toRad(b[0]);
+    var dLon = toRad(b[1] - a[1]);
+    var y = Math.sin(dLon) * Math.cos(lat2);
+    var x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+
+  var COMPASS_DEG = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
+  var COMPASS_ARROW = { N: '↑', NE: '↗', E: '→', SE: '↘', S: '↓', SW: '↙', W: '←', NW: '↖' };
+
+  function angleDiff(a, b) {
+    var d = Math.abs(a - b) % 360;
+    return d > 180 ? 360 - d : d;
+  }
+
+  // Nearest point to pt on segment a-b, via a local equirectangular
+  // projection — accurate enough at track-segment scale, far cheaper than
+  // exact great-circle projection.
+  function projectPointOnSegment(pt, a, b) {
+    var scaleX = Math.cos(toRad(a[0])) * EARTH_R * Math.PI / 180;
+    var scaleY = EARTH_R * Math.PI / 180;
+    var px = (pt[1] - a[1]) * scaleX, py = (pt[0] - a[0]) * scaleY;
+    var bx = (b[1] - a[1]) * scaleX, by = (b[0] - a[0]) * scaleY;
+    var segLen2 = bx * bx + by * by;
+    var t = segLen2 > 0 ? (px * bx + py * by) / segLen2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    var proj = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+    return { point: proj, t: t, distMeters: haversine(pt, proj), segLenMeters: haversine(a, b) };
+  }
+
+  // Nearest point to pt across all of a route's line segments.
+  // Returns { line, point, arcLen, distMeters, segIndex } or null.
+  function nearestOnLines(pt, lines) {
+    var best = null;
+    (lines || []).forEach(function(line) {
+      var cum = 0;
+      for (var i = 0; i < line.length - 1; i++) {
+        var proj = projectPointOnSegment(pt, line[i], line[i + 1]);
+        if (!best || proj.distMeters < best.distMeters) {
+          best = { line: line, point: proj.point, arcLen: cum + proj.t * proj.segLenMeters,
+                    distMeters: proj.distMeters, segIndex: i };
+        }
+        cum += proj.segLenMeters;
+      }
+    });
+    return best;
+  }
+
+  var lineLengthCache = new Map();
+  function cachedLineLength(line) {
+    if (lineLengthCache.has(line)) return lineLengthCache.get(line);
+    var total = 0;
+    for (var i = 0; i < line.length - 1; i++) total += haversine(line[i], line[i + 1]);
+    lineLengthCache.set(line, total);
+    return total;
+  }
+
+  // Point at a given arc-length distance (meters) along line, clamped to ends.
+  function pointAtArcLength(line, arcLen) {
+    if (arcLen <= 0) return line[0];
+    var cum = 0;
+    for (var i = 0; i < line.length - 1; i++) {
+      var segLen = haversine(line[i], line[i + 1]);
+      if (cum + segLen >= arcLen) {
+        var t = segLen > 0 ? (arcLen - cum) / segLen : 0;
+        return [line[i][0] + t * (line[i + 1][0] - line[i][0]), line[i][1] + t * (line[i + 1][1] - line[i][1])];
+      }
+      cum += segLen;
+    }
+    return line[line.length - 1];
+  }
+
+  // Local forward bearing of a line at a given segment index — used to
+  // decide whether "advancing" means increasing or decreasing arc length.
+  function segmentBearing(line, segIndex) {
+    var i = Math.max(0, Math.min(line.length - 2, segIndex));
+    return bearingDeg(line[i], line[i + 1]);
+  }
+
   var map = L.map('amtrak-map', {
     center: [39.5, -98.35],
     zoom: 4,
@@ -131,6 +242,10 @@ function findCorridorSlug(name) {
         var corridorSlug = findCorridorSlug(name);
         if (corridorSlug) {
           popup += '<br><a href="/routes/' + corridorSlug + '" style="font-size:.82rem">' + displayName + ' →</a>';
+          var lines = extractLines(feature.geometry);
+          if (lines.length) {
+            ROUTE_LINES[corridorSlug] = (ROUTE_LINES[corridorSlug] || []).concat(lines);
+          }
         }
         if (routeUrl) {
           popup += '<br><a href="' + routeUrl + '" target="_blank" rel="noopener" style="font-size:.82rem">Amtrak schedule →</a>';
@@ -244,8 +359,44 @@ function findCorridorSlug(name) {
   // ---- Live train positions (only when enabled in admin settings) ----
   if (!LIVE_TRAINS_ENABLED) return;
 
+  // Client-side position-guessing feature flags. Hardcoded for now rather
+  // than admin-configurable — wiring these to real site_preferences columns
+  // is a small follow-up (each one touches five places per the settings
+  // pattern elsewhere in this app); until then, flip these consts to turn a
+  // layer off:
+  //   ENABLE_DEAD_RECKONING — snap each train to its route line and
+  //     extrapolate its position between polls using its current speed and
+  //     heading, instead of leaving it frozen at its last known point.
+  //   ENABLE_LIVE_ANIMATION — actually move the marker every tick; with
+  //     this off (but dead reckoning on) the guessed position still updates,
+  //     just only at each poll rather than continuously.
+  //   ENABLE_SEGMENT_SPEED — when we have two consecutive real fixes for a
+  //     train, use the speed it actually covered that ground at instead of
+  //     its single instantaneous reported speed.
+  var ENABLE_DEAD_RECKONING = true;
+  var ENABLE_LIVE_ANIMATION = true;
+  var ENABLE_SEGMENT_SPEED = true;
+
+  var POLL_MS = 90000;
+  var TICK_MS = 2000;
+  // Stop trusting the guess further after this many seconds since a train's
+  // last real fix — a gap this long usually means polling stalled or the
+  // train stopped somewhere unscheduled, and extrapolating indefinitely
+  // would just walk the marker off the map.
+  var MAX_EXTRAPOLATE_SEC = 5 * 60;
+  // A snapped point further than this from the train's actual reported fix
+  // means we matched the wrong track (branch line, yard move) — better to
+  // show its real position than guess it onto the wrong route.
+  var MAX_SNAP_DIST_METERS = 2000;
+  // A poll-to-poll implied speed above this is almost certainly a bad fix
+  // (upstream glitch, train reassigned a run) rather than a real train.
+  var MAX_PLAUSIBLE_MPS = 100; // ~224 mph
+
   var STATUS_COLOR = { ontime: '#2a893d', late: '#f4a261', verylate: '#c60c2c' };
   var statusEl = document.getElementById('map-live-status');
+  // trainSlug -> { t, marker, line, lineTotal, arcLen, forward, speedMps,
+  //                fixTime, fixPoint, guessing }
+  var trainState = {};
 
   function delayText(min) {
     if (min > 1) return min + ' min late';
@@ -253,17 +404,56 @@ function findCorridorSlug(name) {
     return 'On time';
   }
 
-  function trainPopup(t) {
+  function mphToMps(mph) { return mph * 0.44704; }
+  function mpsToMph(mps) { return mps / 0.44704; }
+
+  function fmtTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  // Regenerated fresh each time a popup is opened, so the speed/heading/ETA
+  // shown always reflects the current guess rather than whatever was true
+  // at the last poll.
+  function trainPopup(slug) {
+    var st = trainState[slug];
+    if (!st) return '';
+    var t = st.t;
     var veryLate = t.delayMin > 60;
     var html = '<strong style="font-size:.9rem">' + esc(t.displayName) + (veryLate ? ' 💀' : '') + '</strong>';
     if (t.corridorName) html += '<br><span style="font-size:.8rem">' + esc(t.corridorName) + '</span>';
     html += '<br><span style="font-size:.8rem;color:' + (veryLate ? '#000' : STATUS_COLOR[t.status]) + '">' +
             esc(delayText(t.delayMin)) + '</span>';
-    if (t.speed > 0) html += '<span style="font-size:.8rem"> · ' + t.speed + ' mph ' + esc(t.heading) + '</span>';
-    if (t.nextStation) html += '<br><span style="font-size:.8rem">Next: ' + esc(t.nextStation) + '</span>';
+
+    var speedMph = st.speedMps != null ? Math.round(mpsToMph(st.speedMps)) : t.speed;
+    var arrow = COMPASS_ARROW[t.heading] || '';
+    html += '<br><span style="font-size:.8rem">' + speedMph + ' mph ' + arrow + ' ' + esc(t.heading) +
+            (st.guessing ? ' <span style="color:var(--muted)">(estimated position)</span>' : '') + '</span>';
+
+    if (t.nextStation) {
+      html += '<br><span style="font-size:.8rem">Next: ' + esc(t.nextStation);
+      if (t.nextEta) html += ' ~' + fmtTime(t.nextEta);
+      html += '</span>';
+    }
+    if (t.lastUpdated) {
+      html += '<br><span style="font-size:.72rem;color:var(--muted)">Last GPS fix: ' + fmtTime(t.lastUpdated) + '</span>';
+    }
     html += '<br><a href="/trains/' + encodeURIComponent(t.trainSlug) + '" style="font-size:.82rem">Train ' +
             esc(t.trainNum) + ' →</a>';
     return html;
+  }
+
+  function markerIcon(t) {
+    var veryLate = t.delayMin > 60;
+    var bg = veryLate ? '#000' : (STATUS_COLOR[t.status] || '#457b9d');
+    var label = veryLate ? '💀 ' + esc(String(t.trainNum)) : esc(String(t.trainNum));
+    return L.divIcon({
+      className: '',
+      html: '<div class="train-num-marker" style="background:' + bg + '">' + label + '</div>',
+      iconSize: [0, 0],
+      iconAnchor: [0, 0]
+    });
   }
 
   function refreshTrains() {
@@ -274,20 +464,61 @@ function findCorridorSlug(name) {
       })
       .then(function(data) {
         var trains = data.trains || [];
-        trainLayer.clearLayers();
+        var seen = {};
+        var now = Date.now();
+
         trains.forEach(function(t) {
-          var veryLate = t.delayMin > 60;
-          var bg = veryLate ? '#000' : (STATUS_COLOR[t.status] || '#457b9d');
-          var label = veryLate ? '💀 ' + esc(String(t.trainNum)) : esc(String(t.trainNum));
-          var icon = L.divIcon({
-            className: '',
-            html: '<div class="train-num-marker" style="background:' + bg + '">' + label + '</div>',
-            iconSize: [0, 0],
-            iconAnchor: [0, 0]
-          });
-          L.marker([t.lat, t.lon], { icon: icon })
-            .bindPopup(trainPopup(t)).addTo(trainLayer);
+          seen[t.trainSlug] = true;
+          var prev = trainState[t.trainSlug];
+          var fixTime = t.lastUpdated ? new Date(t.lastUpdated).getTime() : NaN;
+          if (isNaN(fixTime)) fixTime = now;
+          var fixPoint = [t.lat, t.lon];
+
+          var speedMps = mphToMps(t.speed);
+          if (ENABLE_SEGMENT_SPEED && prev && prev.fixTime && fixTime > prev.fixTime) {
+            var observed = haversine(prev.fixPoint, fixPoint) / ((fixTime - prev.fixTime) / 1000);
+            if (isFinite(observed) && observed < MAX_PLAUSIBLE_MPS) speedMps = observed;
+          }
+
+          var line = null, lineTotal = 0, arcLen = 0, forward = 1;
+          if (ENABLE_DEAD_RECKONING) {
+            var lines = ROUTE_LINES[t.corridorSlug];
+            var snap = lines ? nearestOnLines(fixPoint, lines) : null;
+            if (snap && snap.distMeters < MAX_SNAP_DIST_METERS) {
+              line = snap.line;
+              lineTotal = cachedLineLength(line);
+              arcLen = snap.arcLen;
+              var localBearing = segmentBearing(line, snap.segIndex);
+              var heading = COMPASS_DEG[t.heading];
+              forward = (heading == null || angleDiff(heading, localBearing) <= 90) ? 1 : -1;
+            }
+          }
+
+          var marker = prev && prev.marker;
+          if (!marker) {
+            marker = L.marker(fixPoint, { icon: markerIcon(t) });
+            marker.bindPopup(function() { return trainPopup(t.trainSlug); });
+            marker.addTo(trainLayer);
+          } else {
+            marker.setIcon(markerIcon(t));
+            marker.setLatLng(fixPoint);
+          }
+
+          trainState[t.trainSlug] = {
+            t: t, marker: marker, line: line, lineTotal: lineTotal, arcLen: arcLen,
+            forward: forward, speedMps: speedMps, fixTime: fixTime, fixPoint: fixPoint,
+            guessing: false
+          };
         });
+
+        // Drop markers for trains no longer running.
+        Object.keys(trainState).forEach(function(slug) {
+          if (!seen[slug]) {
+            trainLayer.removeLayer(trainState[slug].marker);
+            delete trainState[slug];
+          }
+        });
+
         if (statusEl) {
           statusEl.textContent = trains.length + ' trains running · updated ' +
             new Date(data.updatedAt).toLocaleTimeString();
@@ -299,10 +530,26 @@ function findCorridorSlug(name) {
       });
   }
 
+  function animationTick() {
+    if (!ENABLE_LIVE_ANIMATION || !ENABLE_DEAD_RECKONING) return;
+    var now = Date.now();
+    Object.keys(trainState).forEach(function(slug) {
+      var st = trainState[slug];
+      if (!st.line) return; // no track match for this train — leave it at its real fix
+      var elapsedSec = Math.min((now - st.fixTime) / 1000, MAX_EXTRAPOLATE_SEC);
+      if (elapsedSec < 1) return;
+      var dist = st.speedMps * elapsedSec * st.forward;
+      var newArc = Math.max(0, Math.min(st.lineTotal, st.arcLen + dist));
+      st.marker.setLatLng(pointAtArcLength(st.line, newArc));
+      st.guessing = true;
+    });
+  }
+
   refreshTrains();
   // Upstream refreshes every 90s; matching that keeps markers current without
   // polling for data that hasn't changed.
-  setInterval(refreshTrains, 90000);
+  setInterval(refreshTrains, POLL_MS);
+  setInterval(animationTick, TICK_MS);
 })();
 </script>
 {{end}}
