@@ -93,6 +93,12 @@ func runMigrations(db *sql.DB) error {
 	// Live train positions on /map (Amtraker feed). Off by default: enabling it
 	// starts polling a third-party API, so that must be an explicit admin choice.
 	db.Exec(`ALTER TABLE site_preferences ADD COLUMN live_trains_enabled INTEGER NOT NULL DEFAULT 0`)
+	// How often (seconds) to poll the upstream feed; admin-adjustable between
+	// 90s (matches Amtraker's own refresh cadence — no point going faster)
+	// and 600s (10 min, matching other public trackers like transitdocs.com).
+	// Defaults to 2 min rather than the 90s floor to go a bit easier on the
+	// free upstream API out of the box.
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN live_trains_poll_seconds INTEGER NOT NULL DEFAULT 120`)
 	// Password reset: a single-use token + timestamp, kept separate from the
 	// email-confirmation token so resetting a password never disturbs verification.
 	db.Exec(`ALTER TABLE users ADD COLUMN reset_token TEXT NOT NULL DEFAULT ''`)

@@ -2085,14 +2085,21 @@ func (app *App) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) 
 
 	case "live_trains":
 		enabled := lastFormValue(r, "live_trains_enabled") == "1"
-		if _, err := app.db.Exec(`UPDATE site_preferences SET live_trains_enabled=? WHERE id=1`, boolToInt(enabled)); err != nil {
+		pollSec, _ := strconv.Atoi(lastFormValue(r, "live_trains_poll_seconds"))
+		if pollSec < 90 {
+			pollSec = 90
+		}
+		if pollSec > 600 {
+			pollSec = 600
+		}
+		if _, err := app.db.Exec(`UPDATE site_preferences SET live_trains_enabled=?, live_trains_poll_seconds=? WHERE id=1`, boolToInt(enabled), pollSec); err != nil {
 			setFlash(w, "Error saving live train settings: "+err.Error())
 			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
 			return
 		}
 		app.logAudit(s.AdminUserID, "update_live_trains", "site_preferences", 1, "")
 		if enabled {
-			setFlash(w, "Live train positions enabled — the map updates within 90 seconds.")
+			setFlash(w, fmt.Sprintf("Live train positions enabled — the map updates within %d seconds.", pollSec))
 		} else {
 			setFlash(w, "Live train positions disabled.")
 		}

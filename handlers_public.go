@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -230,14 +232,16 @@ func (app *App) handleTrainsList(w http.ResponseWriter, r *http.Request) {
 func (app *App) handleMap(w http.ResponseWriter, r *http.Request) {
 	corridors, _ := allCorridors(app.db, true)
 	type mapData struct {
-		Corridors  []Corridor
-		LiveTrains bool
+		Corridors        []Corridor
+		LiveTrains       bool
+		LiveTrainsPollMs int
 	}
 	app.renderPublic(w, r, "map.html", publicPage{
 		Title: "Passenger Rail Route Map | AmazingTrak",
 		Data: mapData{
-			Corridors:  corridors,
-			LiveTrains: app.liveTrainsEnabled(),
+			Corridors:        corridors,
+			LiveTrains:       app.liveTrainsEnabled(),
+			LiveTrainsPollMs: int(app.liveTrainsPollInterval() / time.Millisecond),
 		},
 	})
 }
@@ -969,10 +973,25 @@ func hasRarity(tags string) bool {
 // ----- Amtrak routes proxy (server-side cache to avoid CORS/size issues) -----
 
 var (
-	amtrakRoutesMu      sync.Mutex
-	amtrakRoutesJSON    []byte
-	amtrakRoutesFetched time.Time
+	amtrakRoutesMu       sync.Mutex
+	amtrakRoutesJSON     []byte
+	amtrakRoutesJSONGzip []byte
+	amtrakRoutesFetched  time.Time
 )
+
+// gzipBytes compresses b, or returns nil if compression fails (caller falls
+// back to serving b uncompressed rather than erroring the request).
+func gzipBytes(b []byte) []byte {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	if _, err := gw.Write(b); err != nil {
+		return nil
+	}
+	if err := gw.Close(); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
 
 func fetchAmtrakRoutes() ([]byte, error) {
 	type arcFC struct {
@@ -987,9 +1006,15 @@ func fetchAmtrakRoutes() ([]byte, error) {
 	const pageSize = 1000
 
 	for offset := 0; ; offset += pageSize {
+		// maxAllowableOffset is a server-side generalization tolerance in
+		// degrees (since outSR=4326): 0.0001 is ~11m at this latitude, far
+		// tighter than any real rail curve radius, so curves render smooth
+		// instead of the sharp-angled chords a looser tolerance produces.
+		// geometryPrecision=6 (~0.11m) keeps coordinate rounding from being
+		// the limiting factor instead of the offset itself.
 		u := fmt.Sprintf(
 			"https://services.arcgis.com/xOi1kZaI0eWDREZv/arcgis/rest/services/NTAD_Amtrak_Routes/FeatureServer/0/query"+
-				"?where=1%%3D1&outFields=name%%2CROUTE_URL&f=geojson&outSR=4326&resultRecordCount=%d&resultOffset=%d&geometryPrecision=4&maxAllowableOffset=0.01",
+				"?where=1%%3D1&outFields=name%%2CROUTE_URL&f=geojson&outSR=4326&resultRecordCount=%d&resultOffset=%d&geometryPrecision=6&maxAllowableOffset=0.0001",
 			pageSize, offset)
 		resp, err := client.Get(u)
 		if err != nil {
@@ -1017,14 +1042,29 @@ func fetchAmtrakRoutes() ([]byte, error) {
 	return json.Marshal(result)
 }
 
+// writeAmtrakRoutes serves the given (raw, gzip) pair, using the gzip copy
+// when the client supports it and it compressed successfully. Compressing
+// ourselves — rather than relying on the reverse proxy to do it — keeps this
+// endpoint's real over-the-wire size small (full route geometry gzips to
+// roughly a third its raw size) regardless of what the proxy is configured for.
+func writeAmtrakRoutes(w http.ResponseWriter, r *http.Request, raw, gz []byte) {
+	w.Header().Set("Content-Type", "application/geo+json")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	if gz != nil && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		w.Write(gz)
+		return
+	}
+	w.Write(raw)
+}
+
 func (app *App) handleAmtrakRoutes(w http.ResponseWriter, r *http.Request) {
 	amtrakRoutesMu.Lock()
 	if amtrakRoutesJSON != nil && time.Since(amtrakRoutesFetched) < 12*time.Hour {
-		data := amtrakRoutesJSON
+		raw, gz := amtrakRoutesJSON, amtrakRoutesJSONGzip
 		amtrakRoutesMu.Unlock()
-		w.Header().Set("Content-Type", "application/geo+json")
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		w.Write(data)
+		writeAmtrakRoutes(w, r, raw, gz)
 		return
 	}
 	amtrakRoutesMu.Unlock()
@@ -1034,13 +1074,13 @@ func (app *App) handleAmtrakRoutes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to fetch routes", 502)
 		return
 	}
+	gz := gzipBytes(data)
 
 	amtrakRoutesMu.Lock()
 	amtrakRoutesJSON = data
+	amtrakRoutesJSONGzip = gz
 	amtrakRoutesFetched = time.Now()
 	amtrakRoutesMu.Unlock()
 
-	w.Header().Set("Content-Type", "application/geo+json")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Write(data)
+	writeAmtrakRoutes(w, r, data, gz)
 }

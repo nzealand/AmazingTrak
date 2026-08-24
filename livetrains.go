@@ -15,14 +15,21 @@ import (
 // enables it on the Settings page; while off we never call out to the API.
 //
 // Amtraker refreshes roughly every 90s and Amtrak's own GPS pings lag 1-5
-// minutes behind reality, so polling faster than this buys nothing but load.
+// minutes behind reality, so polling faster than 90s buys nothing but load.
+// The actual interval is admin-configurable (site_preferences.live_trains_poll_seconds,
+// see liveTrainsPollInterval) between this floor and a 10-minute ceiling —
+// matching other public trackers like transitdocs.com, which polls every 10m.
 const (
-	amtrakerURL      = "https://api-v3.amtraker.com/v3/trains"
-	livePollInterval = 90 * time.Second
+	amtrakerURL          = "https://api-v3.amtraker.com/v3/trains"
+	livePollIntervalMin  = 90 * time.Second
+	livePollIntervalMax  = 10 * time.Minute
+	livePollIntervalDflt = 120 * time.Second
 	// A snapshot older than this is withheld rather than shown as current — if
 	// the upstream API dies we would otherwise leave stale trains frozen on the
-	// map, which is worse than showing none.
-	liveMaxAge = 10 * time.Minute
+	// map, which is worse than showing none. Kept well above
+	// livePollIntervalMax so a normal max-interval gap (or one slow poll)
+	// never makes a fresh snapshot look stale.
+	liveMaxAge = 15 * time.Minute
 )
 
 // amtrakerTrain is the subset of the upstream payload we consume.
@@ -321,9 +328,29 @@ func (app *App) liveTrainsEnabled() bool {
 	return prefs.LiveTrainsEnabled
 }
 
-// pollLiveTrains refreshes the cache on a fixed interval for as long as the
-// feature is enabled. Polling is skipped entirely while it is off, so a site
-// that never turns this on never talks to the upstream API.
+// liveTrainsPollInterval returns the admin-configured poll interval, clamped
+// to [livePollIntervalMin, livePollIntervalMax] regardless of what's stored
+// (defense in depth against a bad direct DB edit).
+func (app *App) liveTrainsPollInterval() time.Duration {
+	prefs, err := getSitePrefs(app.db)
+	if err != nil || prefs.LiveTrainsPollSeconds <= 0 {
+		return livePollIntervalDflt
+	}
+	d := time.Duration(prefs.LiveTrainsPollSeconds) * time.Second
+	if d < livePollIntervalMin {
+		return livePollIntervalMin
+	}
+	if d > livePollIntervalMax {
+		return livePollIntervalMax
+	}
+	return d
+}
+
+// pollLiveTrains refreshes the cache for as long as the feature is enabled,
+// re-checking the configured interval after every poll so an admin's change
+// on the Settings page takes effect from the next cycle. Polling is skipped
+// entirely while the feature is off, so a site that never turns this on
+// never talks to the upstream API.
 func (app *App) pollLiveTrains() {
 	poll := func() {
 		if !app.liveTrainsEnabled() {
@@ -338,7 +365,8 @@ func (app *App) pollLiveTrains() {
 	}
 
 	poll()
-	for range time.Tick(livePollInterval) {
+	for {
+		time.Sleep(app.liveTrainsPollInterval())
 		poll()
 	}
 }

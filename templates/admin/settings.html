@@ -249,7 +249,14 @@
         <div class="form-hint">
           Plots currently-running trains on <a href="/map" target="_blank" rel="noopener">/map</a>, colored by how late they are, with each marker linking to its train page. Only trains that exist in your database are shown.
           <br>
-          Position data comes from the third-party <a href="https://amtraker.com/" target="_blank" rel="noopener">Amtraker</a> API and refreshes every 90 seconds; Amtrak's own GPS can lag several minutes behind, so treat positions as approximate. While this is off, the site never contacts the API and the map shows route lines only.
+          Position data comes from the third-party <a href="https://amtraker.com/" target="_blank" rel="noopener">Amtraker</a> API; Amtrak's own GPS can lag several minutes behind, so treat positions as approximate. While this is off, the site never contacts the API and the map shows route lines only.
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="live_trains_poll_seconds">Poll interval (seconds)</label>
+        <input type="number" id="live_trains_poll_seconds" name="live_trains_poll_seconds" min="90" max="600" step="1" value="{{$d.Prefs.LiveTrainsPollSeconds}}" style="max-width:8rem">
+        <div class="form-hint">
+          How often the server checks Amtraker for updated positions. 90 seconds is the floor — Amtraker itself only refreshes about that often, so polling faster gains nothing. 600 seconds (10 min) matches other public trackers like transitdocs.com. The map's own on-screen movement between real updates (an animated best guess based on each train's speed and heading) is unaffected by this setting.
         </div>
       </div>
       <button class="btn btn-primary" type="submit">Save Live Train Settings</button>

@@ -81,6 +81,8 @@ var CORRIDOR_BY_NORM = {};
 {{range .Data.Corridors}}{{if .Slug}}CORRIDOR_BY_NORM[normSlug("{{.Slug}}")] = "{{.Slug}}";
 {{end}}{{end}}
 var LIVE_TRAINS_ENABLED = {{if .Data.LiveTrains}}true{{else}}false{{end}};
+// Admin-configured poll interval (Settings → Live Train Positions), 90000-600000.
+var LIVE_TRAINS_POLL_MS = {{.Data.LiveTrainsPollMs}};
 function findCorridorSlug(name) {
   var norm = normSlug(jsSlugify(name));
   return CORRIDOR_BY_NORM[norm] || null;
@@ -377,13 +379,15 @@ function findCorridorSlug(name) {
   var ENABLE_LIVE_ANIMATION = true;
   var ENABLE_SEGMENT_SPEED = true;
 
-  var POLL_MS = 90000;
+  var POLL_MS = LIVE_TRAINS_POLL_MS || 90000;
   var TICK_MS = 2000;
   // Stop trusting the guess further after this many seconds since a train's
   // last real fix — a gap this long usually means polling stalled or the
   // train stopped somewhere unscheduled, and extrapolating indefinitely
-  // would just walk the marker off the map.
-  var MAX_EXTRAPOLATE_SEC = 5 * 60;
+  // would just walk the marker off the map. Scaled to comfortably cover a
+  // full poll cycle (with a 5 min floor) so a longer admin-configured
+  // interval doesn't make the marker visibly freeze before the next real fix.
+  var MAX_EXTRAPOLATE_SEC = Math.max(5 * 60, (POLL_MS / 1000) * 1.5);
   // A snapped point further than this from the train's actual reported fix
   // means we matched the wrong track (branch line, yard move) — better to
   // show its real position than guess it onto the wrong route.
@@ -546,8 +550,8 @@ function findCorridorSlug(name) {
   }
 
   refreshTrains();
-  // Upstream refreshes every 90s; matching that keeps markers current without
-  // polling for data that hasn't changed.
+  // Matches the server's own poll interval (admin-configurable, Settings →
+  // Live Train Positions) — no point polling our API faster than it refreshes.
   setInterval(refreshTrains, POLL_MS);
   setInterval(animationTick, TICK_MS);
 })();
