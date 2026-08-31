@@ -375,6 +375,87 @@ func runMigrations(db *sql.DB) error {
 		markMigration(db, 9)
 	}
 
+	// Migration 10: register SEPTA and Brightline as live sources — disabled
+	// by default. Neither needs an API key (see septa.go, brightline.go).
+	if !migrationApplied(db, 10) {
+		rows := []struct {
+			key, name string
+			poll      int
+		}{
+			{"septa", "SEPTA Regional Rail", 90},
+			{"brightline", "Brightline", 90},
+		}
+		for _, r := range rows {
+			if _, err := db.Exec(`INSERT OR IGNORE INTO live_sources (source_key, display_name, enabled, poll_seconds) VALUES (?,?,0,?)`,
+				r.key, r.name, r.poll); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 10)
+	}
+
+	// Migration 11: add the SEPTA Regional Rail and Brightline corridors to
+	// already-seeded (upgraded) databases — same fresh-install hazard and
+	// guard as migration 5/8 (see migration 5's comment); a fresh install
+	// instead gets these from corridorSeeds in seed.go.
+	if !migrationApplied(db, 11) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			corridors := []struct{ name, slug, region, desc string }{
+				{"SEPTA Regional Rail", "septa", "Mid-Atlantic",
+					"Philadelphia-area commuter rail network operated by SEPTA across its Airport, Chestnut Hill East, Chestnut Hill West, Cynwyd, Fox Chase, Lansdale/Doylestown, Manayunk/Norristown, Media/Wawa, Paoli/Thorndale, Trenton, Warminster, West Trenton, and Wilmington/Newark lines. Not Amtrak."},
+				{"Brightline", "brightline", "Florida",
+					"Higher-speed intercity rail connecting Miami, Fort Lauderdale, Boca Raton, West Palm Beach, and Orlando. Privately operated by Brightline Trains Florida, not Amtrak."},
+			}
+			for _, c := range corridors {
+				if _, err := db.Exec(`
+					INSERT INTO corridors (name, slug, region, description, sort_order)
+					SELECT ?, ?, ?, ?, COALESCE((SELECT MAX(sort_order) FROM corridors), 0) + 1
+					WHERE NOT EXISTS (SELECT 1 FROM corridors WHERE slug=?)`,
+					c.name, c.slug, c.region, c.desc, c.slug); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 11)
+	}
+
+	// Migration 12: seed a starter set of real, currently-observed train
+	// numbers for SEPTA Regional Rail and Brightline on already-seeded
+	// (upgraded) databases — mirrors trainSeeds in seed.go for fresh
+	// installs. Empirically observed from each source's live feed on
+	// 2026-08-31; not a full published timetable for either. A no-op on a
+	// fresh install (no corridors exist yet — see migration 11's comment).
+	if !migrationApplied(db, 12) {
+		trainSets := []struct {
+			slug, prefix, label string
+			nums                []string
+		}{
+			{"septa", "septa", "SEPTA", []string{
+				"452", "457", "846", "849", "850", "1085", "2388", "2579", "2591",
+				"3537", "3541", "3548", "3552", "4587", "4750", "4754", "5344", "5347",
+				"5349", "5351", "5355", "5496", "6228", "6229", "6256", "6313", "6342",
+				"6345", "6550", "6807", "7455", "9224", "9229", "9231", "9546", "9589",
+				"9593", "9748", "9750", "9757", "9759",
+			}},
+			{"brightline", "brightline", "Brightline", []string{
+				"5150", "5151", "5152", "5340", "5347", "5348", "5355", "5356", "5363",
+			}},
+		}
+		for _, ts := range trainSets {
+			for i, num := range ts.nums {
+				if _, err := db.Exec(`
+					INSERT OR IGNORE INTO trains (corridor_id, train_number, display_name, slug, sort_order)
+					SELECT id, ?, ?, ?, ? FROM corridors WHERE slug=?`,
+					num, ts.label+" "+num, ts.prefix+"-"+num, i+1, ts.slug); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 12)
+	}
+
 	return nil
 }
 

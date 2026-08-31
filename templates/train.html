@@ -89,17 +89,22 @@
       <dt>Train Number</dt>
       <dd>{{$d.Train.TrainNumber}}</dd>
     </div>
+    {{$isAmtrak := isAmtrakCorridor $d.Train.CorridorSlug}}
+    {{if or $isAmtrak (and $d.Live $d.Live.HasDelayInfo)}}
     <div>
       <dt>Live Status</dt>
       <dd>
-        {{if $d.Live}}
+        {{if and $d.Live $d.Live.HasDelayInfo}}
         <span class="status-badge status-{{$d.Live.Status}}">{{delayText $d.Live.DelayMin}}</span>
         {{if $d.Live.NextStation}}<span style="color:var(--muted)"> · Next: {{$d.Live.NextStation}}</span>{{end}}
         <br>
         {{end}}
+        {{if $isAmtrak}}
         <a href="{{transitdocsURL $d.Train.TrainNumber | safeURL}}" target="_blank" rel="noopener">Track on TransitDocs →</a>
+        {{end}}
       </dd>
     </div>
+    {{end}}
     {{end}}
     {{if $d.Train.Direction}}
     <div>

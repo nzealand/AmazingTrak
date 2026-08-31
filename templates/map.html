@@ -294,7 +294,9 @@ function findCorridorSlug(name) {
     loadRouteSource('/api/mbta-routes', 'MBTA schedule'),
     loadRouteSource('/api/caltrain-routes', 'Caltrain schedule'),
     loadRouteSource('/api/ace-routes', 'ACE schedule'),
-    loadRouteSource('/api/lirr-routes', 'LIRR schedule')
+    loadRouteSource('/api/lirr-routes', 'LIRR schedule'),
+    loadRouteSource('/api/septa-routes', 'SEPTA schedule'),
+    loadRouteSource('/api/brightline-routes', 'Brightline schedule')
   ]).then(function() {
     loading.style.display = 'none';
     var countEl = document.getElementById('map-route-count');

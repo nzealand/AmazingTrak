@@ -29,6 +29,8 @@ var nonAmtrakOperators = map[string]struct{ prefix, label string }{
 	"ace":                {"ace", "ACE"},
 	"mbta-commuter-rail": {"mbta", "MBTA"},
 	"lirr":               {"lirr", "LIRR"},
+	"septa":              {"septa", "SEPTA"},
+	"brightline":         {"brightline", "Brightline"},
 }
 
 // corridorSeeds must be ordered so that auto-increment IDs match data.sql references (1..44).
@@ -186,6 +188,10 @@ var corridorSeeds = []corridorSeed{
 		"Boston-area commuter rail network operated by the MBTA across its Providence, Franklin, Needham, Fairmount, Worcester, Fitchburg, Lowell, Haverhill, Newburyport, Kingston, Greenbush, and New Bedford lines. Not Amtrak.", 49},
 	{"LIRR", "lirr", "Northeast",
 		"Long Island Rail Road commuter service connecting Manhattan (Penn Station/Grand Central) to Long Island. Operated by the MTA, not Amtrak.", 50},
+	{"SEPTA Regional Rail", "septa", "Mid-Atlantic",
+		"Philadelphia-area commuter rail network operated by SEPTA across its Airport, Chestnut Hill East, Chestnut Hill West, Cynwyd, Fox Chase, Lansdale/Doylestown, Manayunk/Norristown, Media/Wawa, Paoli/Thorndale, Trenton, Warminster, West Trenton, and Wilmington/Newark lines. Not Amtrak.", 51},
+	{"Brightline", "brightline", "Florida",
+		"Higher-speed intercity rail connecting Miami, Fort Lauderdale, Boca Raton, West Palm Beach, and Orlando. Privately operated by Brightline Trains Florida, not Amtrak.", 52},
 }
 
 // trainSeeds maps corridor index (0-based) → train numbers.
@@ -345,6 +351,18 @@ var trainSeeds = [][]string{
 		"1957", "1958", "1959", "2752", "2753", "2754", "2755", "2898", "2900",
 		"2909", "2911", "2913", "2919",
 	},
+	// 51 SEPTA Regional Rail — empirically observed from a live TrainView API
+	// sample (2026-08-31, afternoon weekday) across all 13 branch lines.
+	{
+		"452", "457", "846", "849", "850", "1085", "2388", "2579", "2591",
+		"3537", "3541", "3548", "3552", "4587", "4750", "4754", "5344", "5347",
+		"5349", "5351", "5355", "5496", "6228", "6229", "6256", "6313", "6342",
+		"6345", "6550", "6807", "7455", "9224", "9229", "9231", "9546", "9589",
+		"9593", "9748", "9750", "9757", "9759",
+	},
+	// 52 Brightline — empirically observed from a live GTFS-Realtime feed
+	// sample (2026-08-31, afternoon, three polls a minute apart).
+	{"5150", "5151", "5152", "5340", "5347", "5348", "5355", "5356", "5363"},
 }
 
 // otpSeeds maps corridor ID (1-based) → on-time percent.

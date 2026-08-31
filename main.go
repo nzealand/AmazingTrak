@@ -361,6 +361,12 @@ var funcMap = template.FuncMap{
 		return fmt.Sprintf("https://asm.transitdocs.com/train/%d/%d/%d/A/%s",
 			now.Year(), int(now.Month()), now.Day(), trainNumber)
 	},
+	// isAmtrakCorridor reports whether a corridor slug is Amtrak-operated.
+	// TransitDocs only tracks Amtrak trains, so this also gates that link.
+	"isAmtrakCorridor": func(corridorSlug string) bool {
+		_, ok := nonAmtrakOperators[corridorSlug]
+		return !ok
+	},
 	"rarityBadges": func(tags string) []rarityBadge {
 		return rarityBadgesForTags(tags)
 	},
@@ -772,6 +778,8 @@ func main() {
 	mux.HandleFunc("GET /api/caltrain-routes", app.handleCaltrainRoutes)
 	mux.HandleFunc("GET /api/ace-routes", app.handleACERoutes)
 	mux.HandleFunc("GET /api/lirr-routes", app.handleLIRRRoutes)
+	mux.HandleFunc("GET /api/septa-routes", app.handleSEPTARoutes)
+	mux.HandleFunc("GET /api/brightline-routes", app.handleBrightlineRoutes)
 	mux.HandleFunc("GET /api/live-trains", app.handleLiveTrains)
 	mux.HandleFunc("GET /api/live-trains/{slug}", app.handleLiveTrain)
 	mux.HandleFunc("GET /api/trains/{slug}/stops", app.handleTrainStopsAPI)
