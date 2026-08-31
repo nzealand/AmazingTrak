@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 )
 
 // Caltrain live positions, sourced from 511.org's shared SF Bay regional
@@ -92,6 +93,33 @@ func loadDBTrainsByCorridorSlug(app *App, slug string) (map[string]dbTrain, erro
 		out[num] = t
 	}
 	return out, rows.Err()
+}
+
+// ---- Route line geometry (for the public map's "Route lines" layer) ----
+//
+// Caltrain's operator_id on 511.org's static-GTFS datafeeds endpoint is "CT"
+// — the same agency code used to filter the live regional feed (bay511.go).
+// It's the same 511.org account/key already required to enable Caltrain live
+// positions above.
+var caltrainRouteLineCache routeLineCache
+
+func fetchCaltrainRouteGeoJSON(app *App) ([]byte, error) {
+	src, err := getLiveSource(app.db, "caltrain")
+	if err != nil {
+		return nil, err
+	}
+	if src.APIKey == "" {
+		return emptyRouteGeoJSON(), nil
+	}
+	shapes, err := fetch511StaticShapes(src.APIKey, "CT")
+	if err != nil {
+		return nil, err
+	}
+	return shapesToFeatureCollection(shapes, "Caltrain"), nil
+}
+
+func (app *App) handleCaltrainRoutes(w http.ResponseWriter, r *http.Request) {
+	caltrainRouteLineCache.handle(w, r, func() ([]byte, error) { return fetchCaltrainRouteGeoJSON(app) })
 }
 
 func mpsToMph(mps float64) float64 { return mps / 0.44704 }

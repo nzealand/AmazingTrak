@@ -76,6 +76,32 @@ func (aceSource) Fetch(app *App) ([]liveTrain, error) {
 	return out, nil
 }
 
+// ---- Route line geometry (for the public map's "Route lines" layer) ----
+//
+// ACE's operator_id on 511.org's static-GTFS datafeeds endpoint is "CE",
+// confirmed against the same /transit/gtfsoperators list used for the live
+// regional feed's agency prefix (bay511.go).
+var aceRouteLineCache routeLineCache
+
+func fetchACERouteGeoJSON(app *App) ([]byte, error) {
+	src, err := getLiveSource(app.db, "ace")
+	if err != nil {
+		return nil, err
+	}
+	if src.APIKey == "" {
+		return emptyRouteGeoJSON(), nil
+	}
+	shapes, err := fetch511StaticShapes(src.APIKey, "CE")
+	if err != nil {
+		return nil, err
+	}
+	return shapesToFeatureCollection(shapes, "ACE"), nil
+}
+
+func (app *App) handleACERoutes(w http.ResponseWriter, r *http.Request) {
+	aceRouteLineCache.handle(w, r, func() ([]byte, error) { return fetchACERouteGeoJSON(app) })
+}
+
 // fetchGTFSRTBody does a plain unauthenticated-or-not GET and returns the raw
 // body, shared by every direct (non-regional) GTFS-RT source (LIRR) and by
 // the regional Bay Area fetch itself (bay511.go).

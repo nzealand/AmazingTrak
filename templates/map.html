@@ -240,47 +240,66 @@ function findCorridorSlug(name) {
 
   var loading = document.getElementById('map-loading');
 
-  fetch('/api/amtrak-routes')
-    .then(function(r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function(data) {
-      loading.style.display = 'none';
-      var features = data.features || [];
-      var countEl = document.getElementById('map-route-count');
-      if (countEl) countEl.textContent = features.length + ' routes';
+  // Route line geometry is combined from multiple agency-specific endpoints
+  // — Amtrak's own NTAD dataset has no MBTA (or other agency) geometry, so
+  // each agency with route lines gets its own /api/*-routes endpoint, all
+  // merged onto the one routeLayer/ROUTE_LINES.
+  var routeColorIndex = 0;
+  var totalRouteCount = 0;
 
-      features.forEach(function(feature, i) {
-        var props = feature.properties || {};
-        var name = props.name || 'Amtrak Route';
-        var routeUrl = props.ROUTE_URL || '';
-        var color = COLORS[i % COLORS.length];
+  function loadRouteSource(url, scheduleLabel) {
+    return fetch(url)
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        var features = data.features || [];
+        totalRouteCount += features.length;
 
-        var displayName = name.replace(/^amtrak\s+/i, '');
-        var popup = '<strong style="font-size:.9rem">' + displayName + '</strong>';
-        var corridorSlug = findCorridorSlug(name);
-        if (corridorSlug) {
-          popup += '<br><a href="/routes/' + corridorSlug + '" style="font-size:.82rem">' + displayName + ' →</a>';
-          var lines = extractLines(feature.geometry);
-          if (lines.length) {
-            ROUTE_LINES[corridorSlug] = (ROUTE_LINES[corridorSlug] || []).concat(lines);
+        features.forEach(function(feature) {
+          var props = feature.properties || {};
+          var name = props.name || 'Amtrak Route';
+          var routeUrl = props.ROUTE_URL || '';
+          var color = COLORS[routeColorIndex++ % COLORS.length];
+
+          var displayName = name.replace(/^amtrak\s+/i, '');
+          var popup = '<strong style="font-size:.9rem">' + displayName + '</strong>';
+          var corridorSlug = findCorridorSlug(name);
+          if (corridorSlug) {
+            popup += '<br><a href="/routes/' + corridorSlug + '" style="font-size:.82rem">' + displayName + ' →</a>';
+            var lines = extractLines(feature.geometry);
+            if (lines.length) {
+              ROUTE_LINES[corridorSlug] = (ROUTE_LINES[corridorSlug] || []).concat(lines);
+            }
           }
-        }
-        if (routeUrl) {
-          popup += '<br><a href="' + routeUrl + '" target="_blank" rel="noopener" style="font-size:.82rem">Amtrak schedule →</a>';
-        }
+          if (routeUrl) {
+            popup += '<br><a href="' + routeUrl + '" target="_blank" rel="noopener" style="font-size:.82rem">' + scheduleLabel + ' →</a>';
+          }
 
-        L.geoJSON(feature, {
-          style: { color: color, weight: 3, opacity: .85 }
-        }).bindPopup(popup).addTo(routeLayer);
+          L.geoJSON(feature, {
+            style: { color: color, weight: 3, opacity: .85 }
+          }).bindPopup(popup).addTo(routeLayer);
+        });
+      })
+      .catch(function(err) {
+        console.error('Route data error (' + url + '):', err);
       });
-    })
-    .catch(function(err) {
-      loading.textContent = 'Could not load route data — try refreshing.';
-      loading.style.pointerEvents = 'auto';
-      console.error('Amtrak routes error:', err);
-    });
+  }
+
+  // Each source resolves independently, so one agency's endpoint failing
+  // (e.g. MBTA's upstream API down) never blanks out routes that loaded fine.
+  Promise.all([
+    loadRouteSource('/api/amtrak-routes', 'Amtrak schedule'),
+    loadRouteSource('/api/mbta-routes', 'MBTA schedule'),
+    loadRouteSource('/api/caltrain-routes', 'Caltrain schedule'),
+    loadRouteSource('/api/ace-routes', 'ACE schedule'),
+    loadRouteSource('/api/lirr-routes', 'LIRR schedule')
+  ]).then(function() {
+    loading.style.display = 'none';
+    var countEl = document.getElementById('map-route-count');
+    if (countEl) countEl.textContent = totalRouteCount + ' routes';
+  });
 
   function esc(s) {
     var d = document.createElement('div');

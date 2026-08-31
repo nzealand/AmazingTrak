@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"regexp"
 	"time"
 
@@ -102,4 +103,30 @@ func (lirrSource) Fetch(app *App) ([]liveTrain, error) {
 		out = append(out, lt)
 	}
 	return out, nil
+}
+
+// ---- Route line geometry (for the public map's "Route lines" layer) ----
+//
+// Unlike LIRR's live-position feed, this hits the MTA's static GTFS bundle
+// (a zip, not GTFS-RT protobuf) — same public/no-key access. Confirmed
+// empirically: web.mta.info 301s this to an S3 bucket, which the default
+// http.Client follows automatically.
+const lirrStaticGTFSURL = "http://web.mta.info/developers/data/lirr/google_transit.zip"
+
+var lirrRouteLineCache routeLineCache
+
+func fetchLIRRRouteGeoJSON() ([]byte, error) {
+	data, err := downloadBytes(lirrStaticGTFSURL)
+	if err != nil {
+		return nil, err
+	}
+	shapes, err := parseGTFSShapesZip(data)
+	if err != nil {
+		return nil, err
+	}
+	return shapesToFeatureCollection(shapes, "LIRR"), nil
+}
+
+func (app *App) handleLIRRRoutes(w http.ResponseWriter, r *http.Request) {
+	lirrRouteLineCache.handle(w, r, fetchLIRRRouteGeoJSON)
 }
