@@ -2,6 +2,14 @@
 
 All notable changes to AmazingTrak are documented here.
 
+===3.14.0=====
+
+### Multi-source live train tracking
+- **Live tracking is now pluggable**: the map's live-position feature is no longer hardwired to Amtrak. A new `live_sources` table holds one row per data provider (enabled, poll interval, API key, last error/poll time), so adding another agency going forward is a data row plus one Go file, not a schema change. The Settings page now lists every registered source with its own enable toggle, poll interval, and (where needed) API key field, instead of a single Amtrak-only switch.
+- **Caltrain added** as the first non-Amtrak source, via the 511.org SF Bay Open Data GTFS-Realtime feed. Requires a free API key from [511.org/open-data](https://511.org/open-data), entered on the Settings page. Matches Caltrain's GTFS-RT trip_id directly to train numbers in a new **Caltrain** corridor (seeded with a starter set of real train numbers observed live from the feed — add more via the admin panel as needed). v1 covers position/speed/heading only; delay and next-station info aren't available from this source yet.
+- Existing Amtrak live-tracking settings (enabled/poll interval) carry forward automatically to the new table — no admin action needed to keep Amtrak tracking working as before.
+- The map now correctly omits the delay/"on time" badge for a source (like Caltrain, for now) that doesn't report delay data, instead of showing a misleading "On time".
+
 ===3.12.0=====
 
 ### Security — accounts & brute-force protection

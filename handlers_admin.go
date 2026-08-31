@@ -1829,16 +1829,22 @@ func (app *App) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", 500)
 		return
 	}
+	liveSources, err := getLiveSources(app.db)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
 	type settingsData struct {
 		User         AdminUser
 		Prefs        SitePreferences
 		HasResendKey bool
+		LiveSources  []LiveSource
 	}
 	app.renderAdmin(w, r, "settings.html", adminPage{
 		Title:     "Settings",
 		Flash:     getFlash(w, r),
 		CSRFToken: s.CSRFToken,
-		Data:      settingsData{User: user, Prefs: prefs, HasResendKey: app.resendKey != ""},
+		Data:      settingsData{User: user, Prefs: prefs, HasResendKey: app.resendKey != "", LiveSources: liveSources},
 	})
 }
 
@@ -2083,25 +2089,33 @@ func (app *App) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) 
 		app.logAudit(s.AdminUserID, "update_user_approval", "site_preferences", 1, "")
 		setFlash(w, "User approval settings saved.")
 
-	case "live_trains":
-		enabled := lastFormValue(r, "live_trains_enabled") == "1"
-		pollSec, _ := strconv.Atoi(lastFormValue(r, "live_trains_poll_seconds"))
-		if pollSec < 90 {
-			pollSec = 90
+	case "live_source":
+		key := lastFormValue(r, "source_key")
+		src := liveSourceByKey(key)
+		if src == nil {
+			setFlash(w, "Unknown live source.")
+			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
+			return
 		}
-		if pollSec > 600 {
-			pollSec = 600
+		enabled := lastFormValue(r, "enabled") == "1"
+		pollSec, _ := strconv.Atoi(lastFormValue(r, "poll_seconds"))
+		pollSec = int(clampPollInterval(pollSec) / time.Second)
+		apiKey := strings.TrimSpace(r.FormValue("api_key"))
+		if enabled && src.NeedsAPIKey() && apiKey == "" {
+			setFlash(w, "This source needs an API key before it can be enabled.")
+			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
+			return
 		}
-		if _, err := app.db.Exec(`UPDATE site_preferences SET live_trains_enabled=?, live_trains_poll_seconds=? WHERE id=1`, boolToInt(enabled), pollSec); err != nil {
+		if err := updateLiveSourceConfig(app.db, key, enabled, pollSec, apiKey); err != nil {
 			setFlash(w, "Error saving live train settings: "+err.Error())
 			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
 			return
 		}
-		app.logAudit(s.AdminUserID, "update_live_trains", "site_preferences", 1, "")
+		app.logAudit(s.AdminUserID, "update_live_source", "live_sources", 0, key)
 		if enabled {
-			setFlash(w, fmt.Sprintf("Live train positions enabled — the map updates within %d seconds.", pollSec))
+			setFlash(w, fmt.Sprintf("%s live positions enabled — the map updates within %d seconds.", key, pollSec))
 		} else {
-			setFlash(w, "Live train positions disabled.")
+			setFlash(w, fmt.Sprintf("%s live positions disabled.", key))
 		}
 
 	default:

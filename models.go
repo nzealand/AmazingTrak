@@ -902,6 +902,65 @@ func getSitePrefs(db *sql.DB) (SitePreferences, error) {
 	return p, err
 }
 
+// LiveSource is one row of the live_sources config table: an admin-managed
+// on/off switch, poll interval, and (where the upstream provider requires
+// one) API key for a single live-tracking data source. See livetrains.go.
+type LiveSource struct {
+	Key          string
+	DisplayName  string
+	Enabled      bool
+	PollSeconds  int
+	APIKey       string
+	LastError    string
+	LastPolledAt string
+}
+
+func getLiveSources(db *sql.DB) ([]LiveSource, error) {
+	rows, err := db.Query(`SELECT source_key, display_name, enabled, poll_seconds, api_key, last_error, last_polled_at FROM live_sources ORDER BY source_key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []LiveSource
+	for rows.Next() {
+		var s LiveSource
+		var enabled int
+		if err := rows.Scan(&s.Key, &s.DisplayName, &enabled, &s.PollSeconds, &s.APIKey, &s.LastError, &s.LastPolledAt); err != nil {
+			return nil, err
+		}
+		s.Enabled = enabled != 0
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+func getLiveSource(db *sql.DB, key string) (LiveSource, error) {
+	var s LiveSource
+	var enabled int
+	err := db.QueryRow(`SELECT source_key, display_name, enabled, poll_seconds, api_key, last_error, last_polled_at FROM live_sources WHERE source_key=?`, key).
+		Scan(&s.Key, &s.DisplayName, &enabled, &s.PollSeconds, &s.APIKey, &s.LastError, &s.LastPolledAt)
+	s.Enabled = enabled != 0
+	return s, err
+}
+
+func updateLiveSourceConfig(db *sql.DB, key string, enabled bool, pollSeconds int, apiKey string) error {
+	_, err := db.Exec(`UPDATE live_sources SET enabled=?, poll_seconds=?, api_key=?, updated_at=CURRENT_TIMESTAMP WHERE source_key=?`,
+		boolToInt(enabled), pollSeconds, apiKey, key)
+	return err
+}
+
+// recordLiveSourceResult stamps a source's most recent poll outcome so the
+// admin Settings page can show whether it's actually working, not just
+// whether it's enabled. fetchErr nil clears any previous error.
+func recordLiveSourceResult(db *sql.DB, key string, fetchErr error) {
+	msg := ""
+	if fetchErr != nil {
+		msg = fetchErr.Error()
+	}
+	db.Exec(`UPDATE live_sources SET last_error=?, last_polled_at=CURRENT_TIMESTAMP WHERE source_key=?`, msg, key)
+}
+
 func getAdminUser(db *sql.DB, id int64) (AdminUser, error) {
 	var u AdminUser
 	err := db.QueryRow(`SELECT id, username, password_hash, must_change_password, permission_level FROM admin_users WHERE id=?`, id).

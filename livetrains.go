@@ -95,6 +95,11 @@ type liveTrain struct {
 	// LastUpdated is when this train's position was last actually refreshed
 	// upstream (RFC3339) — distinct from our own poll cadence.
 	LastUpdated string `json:"lastUpdated,omitempty"`
+	// HasDelayInfo is false for a source (e.g. Caltrain's VehiclePositions-only
+	// feed, for now) that can't tell us how late a train is running. The map
+	// UI must not render DelayMin/Status as "on time" — that's just the zero
+	// value — unless this is true.
+	HasDelayInfo bool `json:"hasDelayInfo"`
 }
 
 // liveSnapshot is one poll's worth of matched trains.
@@ -328,13 +333,14 @@ func fetchLiveTrains(app *App) ([]liveTrain, error) {
 				CurrentStation:   prog.currentStation,
 				CurrentDeparture: prog.currentDeparture,
 				LastUpdated:      lt.LastValTS,
+				HasDelayInfo:     true,
 			})
 		}
 	}
 	return out, nil
 }
 
-// liveTrainsCache holds the most recent successful poll.
+// liveTrainsCache holds the most recent successful poll of one source.
 type liveTrainsCache struct {
 	mu        sync.RWMutex
 	trains    []liveTrain
@@ -359,42 +365,137 @@ func (c *liveTrainsCache) load() (liveSnapshot, bool) {
 	return liveSnapshot{Trains: c.trains, UpdatedAt: c.updatedAt}, true
 }
 
-// findLiveTrain returns the current snapshot's entry for a train, matched by
-// slug, if the feature is on and that train is currently running.
-func (app *App) findLiveTrain(slug string) *liveTrain {
-	if !app.liveTrainsEnabled() {
-		return nil
-	}
-	snap, ok := app.liveTrains.load()
-	if !ok {
-		return nil
-	}
-	for i, t := range snap.Trains {
-		if t.TrainSlug == slug {
-			return &snap.Trains[i]
+// liveSource is one pluggable live-tracking data provider. Amtrak (Amtraker)
+// and Caltrain (511.org GTFS-RT) both implement it; adding another agency
+// later is a new file implementing this interface plus a live_sources config
+// row (see db.go migration 4) — no changes needed here or to the map/API
+// endpoints below, which are all source-agnostic.
+type liveSource interface {
+	// Key matches live_sources.source_key and is this source's cache key.
+	Key() string
+	// NeedsAPIKey tells the admin Settings page whether to show an API-key
+	// field for this source.
+	NeedsAPIKey() bool
+	// Fetch pulls one poll's worth of trains, already matched to our own DB
+	// trains, from this source's upstream feed.
+	Fetch(app *App) ([]liveTrain, error)
+}
+
+// amtrakSource wraps the pre-existing Amtraker integration above.
+type amtrakSource struct{}
+
+func (amtrakSource) Key() string                         { return "amtrak" }
+func (amtrakSource) NeedsAPIKey() bool                   { return false }
+func (amtrakSource) Fetch(app *App) ([]liveTrain, error) { return fetchLiveTrains(app) }
+
+// registeredLiveSources lists every live-tracking provider the app knows how
+// to poll. Each one needs a matching row in live_sources (seeded in db.go)
+// to be configurable from the admin Settings page.
+var registeredLiveSources = []liveSource{
+	amtrakSource{},
+	caltrainSource{},
+}
+
+// liveSourceByKey looks up a registered source by its live_sources.source_key,
+// or nil if key doesn't match anything registered.
+func liveSourceByKey(key string) liveSource {
+	for _, src := range registeredLiveSources {
+		if src.Key() == key {
+			return src
 		}
 	}
 	return nil
 }
 
-// liveTrainsEnabled reports whether an admin has turned the feature on.
-func (app *App) liveTrainsEnabled() bool {
-	prefs, err := getSitePrefs(app.db)
-	if err != nil {
-		return false
+// newLiveTrainCaches allocates one cache per registered source.
+func newLiveTrainCaches() map[string]*liveTrainsCache {
+	m := make(map[string]*liveTrainsCache, len(registeredLiveSources))
+	for _, src := range registeredLiveSources {
+		m[src.Key()] = &liveTrainsCache{}
 	}
-	return prefs.LiveTrainsEnabled
+	return m
 }
 
-// liveTrainsPollInterval returns the admin-configured poll interval, clamped
-// to [livePollIntervalMin, livePollIntervalMax] regardless of what's stored
-// (defense in depth against a bad direct DB edit).
+// findLiveTrain returns the current snapshot's entry for a train, matched by
+// slug, across every enabled source.
+func (app *App) findLiveTrain(slug string) *liveTrain {
+	for _, src := range registeredLiveSources {
+		cache, ok := app.liveTrainCaches[src.Key()]
+		if !ok {
+			continue
+		}
+		snap, ok := cache.load()
+		if !ok {
+			continue
+		}
+		for i, t := range snap.Trains {
+			if t.TrainSlug == slug {
+				return &snap.Trains[i]
+			}
+		}
+	}
+	return nil
+}
+
+// mergedLiveSnapshot combines every source's current cache into one snapshot
+// for the map. UpdatedAt is the oldest of the contributing sources' update
+// times, so a client checking freshness isn't misled by one very fresh
+// source masking a stale one. Returns false if no source has fresh data.
+func (app *App) mergedLiveSnapshot() (liveSnapshot, bool) {
+	var out liveSnapshot
+	found := false
+	for _, src := range registeredLiveSources {
+		cache, ok := app.liveTrainCaches[src.Key()]
+		if !ok {
+			continue
+		}
+		snap, ok := cache.load()
+		if !ok {
+			continue
+		}
+		out.Trains = append(out.Trains, snap.Trains...)
+		if !found || snap.UpdatedAt.Before(out.UpdatedAt) {
+			out.UpdatedAt = snap.UpdatedAt
+		}
+		found = true
+	}
+	return out, found
+}
+
+// liveTrainsEnabled reports whether at least one live source is currently on.
+func (app *App) liveTrainsEnabled() bool {
+	var n int
+	app.db.QueryRow(`SELECT COUNT(*) FROM live_sources WHERE enabled=1`).Scan(&n)
+	return n > 0
+}
+
+// liveTrainsPollInterval returns the fastest configured interval among
+// enabled sources, for the frontend's own poll cadence (LiveTrainsPollMs).
 func (app *App) liveTrainsPollInterval() time.Duration {
-	prefs, err := getSitePrefs(app.db)
-	if err != nil || prefs.LiveTrainsPollSeconds <= 0 {
+	sources, err := getLiveSources(app.db)
+	if err != nil {
 		return livePollIntervalDflt
 	}
-	d := time.Duration(prefs.LiveTrainsPollSeconds) * time.Second
+	best := time.Duration(0)
+	for _, s := range sources {
+		if !s.Enabled {
+			continue
+		}
+		d := clampPollInterval(s.PollSeconds)
+		if best == 0 || d < best {
+			best = d
+		}
+	}
+	if best == 0 {
+		return livePollIntervalDflt
+	}
+	return best
+}
+
+// clampPollInterval enforces [livePollIntervalMin, livePollIntervalMax]
+// regardless of what's stored (defense in depth against a bad direct DB edit).
+func clampPollInterval(seconds int) time.Duration {
+	d := time.Duration(seconds) * time.Second
 	if d < livePollIntervalMin {
 		return livePollIntervalMin
 	}
@@ -404,54 +505,62 @@ func (app *App) liveTrainsPollInterval() time.Duration {
 	return d
 }
 
-// pollLiveTrains refreshes the cache for as long as the feature is enabled,
-// re-checking the configured interval after every poll so an admin's change
+// pollLiveSource refreshes one source's cache for as long as it's enabled,
+// re-checking its configured interval after every poll so an admin's change
 // on the Settings page takes effect from the next cycle. Polling is skipped
-// entirely while the feature is off, so a site that never turns this on
-// never talks to the upstream API.
-func (app *App) pollLiveTrains() {
+// entirely while a source is off, so a site that never enables it never talks
+// to that source's upstream API.
+func (app *App) pollLiveSource(src liveSource) {
+	cache := app.liveTrainCaches[src.Key()]
 	poll := func() {
-		if !app.liveTrainsEnabled() {
+		s, err := getLiveSource(app.db, src.Key())
+		if err != nil || !s.Enabled {
 			return
 		}
-		trains, err := fetchLiveTrains(app)
+		trains, err := src.Fetch(app)
+		recordLiveSourceResult(app.db, src.Key(), err)
 		if err != nil {
 			// Keep serving the last good snapshot until it ages out.
 			return
 		}
-		app.liveTrains.store(trains)
+		cache.store(trains)
 	}
 
 	poll()
 	for {
-		time.Sleep(app.liveTrainsPollInterval())
+		s, err := getLiveSource(app.db, src.Key())
+		interval := livePollIntervalDflt
+		if err == nil {
+			interval = clampPollInterval(s.PollSeconds)
+		}
+		time.Sleep(interval)
 		poll()
 	}
 }
 
-// handleLiveTrains serves the current snapshot to the map. When the feature is
-// disabled the endpoint behaves as though it does not exist.
+// handleLiveTrains serves the current merged snapshot to the map. When no
+// source is enabled the endpoint behaves as though it does not exist.
 func (app *App) handleLiveTrains(w http.ResponseWriter, r *http.Request) {
 	if !app.liveTrainsEnabled() {
 		http.NotFound(w, r)
 		return
 	}
-	snap, ok := app.liveTrains.load()
+	snap, ok := app.mergedLiveSnapshot()
 	if !ok {
 		http.Error(w, "Live train data unavailable", 503)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	// Positions change every 90s upstream; a short cache absorbs bursts without
-	// letting a browser show a visibly wrong position.
+	// Positions change every 90s or so upstream; a short cache absorbs bursts
+	// without letting a browser show a visibly wrong position.
 	w.Header().Set("Cache-Control", "public, max-age=30")
 	json.NewEncoder(w).Encode(snap)
 }
 
 // handleLiveTrain serves the cached data for one train, matched by slug, so a
 // client that only cares about a single selected train doesn't need to
-// re-fetch and re-diff the whole snapshot every poll. Returns 404 for a
-// disabled feature, a stale cache, or a train not currently running — the
+// re-fetch and re-diff the whole snapshot every poll. Returns 404 for no
+// source enabled, a stale cache, or a train not currently running — the
 // client doesn't need to distinguish those cases.
 func (app *App) handleLiveTrain(w http.ResponseWriter, r *http.Request) {
 	t := app.findLiveTrain(r.PathValue("slug"))

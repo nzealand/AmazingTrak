@@ -182,7 +182,7 @@ type App struct {
 	adminTemplates  map[string]*template.Template
 	indexCacheMu    sync.RWMutex
 	indexCacheHTML  []byte
-	liveTrains      liveTrainsCache
+	liveTrainCaches map[string]*liveTrainsCache
 }
 
 type nonceKey struct{}
@@ -720,6 +720,7 @@ func main() {
 		secureCookies:   secureCookies,
 		publicTemplates: pubTmpl,
 		adminTemplates:  admTmpl,
+		liveTrainCaches: newLiveTrainCaches(),
 	}
 
 	go func() {
@@ -729,8 +730,11 @@ func main() {
 		}
 	}()
 
-	// Live train positions; a no-op while the feature is disabled in Settings.
-	go app.pollLiveTrains()
+	// Live train positions, one poll loop per registered source; each is a
+	// no-op while that source is disabled in Settings.
+	for _, src := range registeredLiveSources {
+		go app.pollLiveSource(src)
+	}
 
 	mux := http.NewServeMux()
 

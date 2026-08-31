@@ -258,7 +258,7 @@ func (app *App) handleCorridors(w http.ResponseWriter, r *http.Request) {
 	// per-corridor lookup.
 	liveCounts := map[string]int{}
 	if app.liveTrainsEnabled() {
-		if snap, ok := app.liveTrains.load(); ok {
+		if snap, ok := app.mergedLiveSnapshot(); ok {
 			for _, t := range snap.Trains {
 				liveCounts[t.CorridorSlug]++
 			}

@@ -122,6 +122,19 @@ func runMigrations(db *sql.DB) error {
 	// password reset.
 	db.Exec(`ALTER TABLE users ADD COLUMN failed_login_count INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE users ADD COLUMN login_locked INTEGER NOT NULL DEFAULT 0`)
+	// Live train data sources (Amtraker for Amtrak, GTFS-RT feeds for everyone
+	// else). One row per agency, keyed by a short slug, so adding a new source
+	// is a data row rather than a schema change — see livetrains.go.
+	db.Exec(`CREATE TABLE IF NOT EXISTS live_sources (
+		source_key TEXT PRIMARY KEY,
+		display_name TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 0,
+		poll_seconds INTEGER NOT NULL DEFAULT 120,
+		api_key TEXT NOT NULL DEFAULT '',
+		last_error TEXT NOT NULL DEFAULT '',
+		last_polled_at TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+	) STRICT, WITHOUT ROWID`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token)`)
 	// Case-insensitive username uniqueness, preserving the user's chosen display
@@ -192,6 +205,81 @@ func runMigrations(db *sql.DB) error {
 			return err
 		}
 		markMigration(db, 3)
+	}
+
+	// Migration 4: introduce the multi-source live-tracking config table
+	// (live_sources), seeded from the pre-existing Amtrak-only
+	// site_preferences columns so an admin's existing enabled/interval choice
+	// carries forward unchanged, plus a disabled-by-default Caltrain row
+	// (needs a free 511.org API key before it can be turned on — see
+	// caltrain.go). site_preferences.live_trains_* are left in place, just no
+	// longer read after this point.
+	if !migrationApplied(db, 4) {
+		// On a brand new install this migration runs before seedDB has
+		// inserted the site_preferences row (openDB → runMigrations happens
+		// before seedDB — see main.go), so this query legitimately finds no
+		// row yet; fall back to the same defaults getSitePrefs itself uses
+		// rather than leaving the Scan destinations at their zero values.
+		amtrakEnabled, amtrakPoll := 0, 120
+		db.QueryRow(`SELECT COALESCE(live_trains_enabled,0), COALESCE(live_trains_poll_seconds,120) FROM site_preferences WHERE id=1`).
+			Scan(&amtrakEnabled, &amtrakPoll)
+		if _, err := db.Exec(`INSERT OR IGNORE INTO live_sources (source_key, display_name, enabled, poll_seconds) VALUES (?,?,?,?)`,
+			"amtrak", "Amtrak (Amtraker)", amtrakEnabled, amtrakPoll); err != nil {
+			return err
+		}
+		if _, err := db.Exec(`INSERT OR IGNORE INTO live_sources (source_key, display_name, enabled, poll_seconds) VALUES (?,?,?,?)`,
+			"caltrain", "Caltrain (511.org)", 0, 90); err != nil {
+			return err
+		}
+		markMigration(db, 4)
+	}
+
+	// Migration 5: add the Caltrain corridor to already-seeded (upgraded)
+	// databases. seedDB only ever runs against an empty corridors table, so
+	// appending to corridorSeeds in seed.go only reaches brand-new installs —
+	// an existing production database needs this explicit insert instead. No
+	// trains are added here; matching happens by whatever train_number rows
+	// an admin adds under this corridor (see caltrain.go).
+	//
+	// Guarded on corridors already being non-empty: this migration runs
+	// during openDB, before seedDB (see main.go), so on a genuinely fresh
+	// install corridors is still empty here — inserting into it at this
+	// point would make seedDB's own "already seeded?" check (COUNT(*) > 0)
+	// see a false positive and skip ALL seeding, including the admin user.
+	// A fresh install instead gets Caltrain from corridorSeeds in seed.go.
+	if !migrationApplied(db, 5) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			if _, err := db.Exec(`
+				INSERT INTO corridors (name, slug, region, description, sort_order)
+				SELECT 'Caltrain', 'caltrain', 'California',
+					'Commuter rail service along the San Francisco Peninsula and South Bay, connecting San Francisco to San Jose and Gilroy. Operated by the Peninsula Corridor Joint Powers Board, not Amtrak.',
+					COALESCE((SELECT MAX(sort_order) FROM corridors), 0) + 1
+				WHERE NOT EXISTS (SELECT 1 FROM corridors WHERE slug='caltrain')`); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 5)
+	}
+
+	// Migration 6: seed a starter set of Caltrain trains on already-seeded
+	// (upgraded) databases, mirroring the same numbers added to trainSeeds
+	// in seed.go for fresh installs — empirically observed from a live
+	// 511.org GTFS-RT feed sample (2026-08-31, late morning weekday), not a
+	// full published timetable. A no-op on a fresh install (no caltrain
+	// corridor exists yet at this point — see migration 5's comment); that
+	// case is instead covered by trainSeeds.
+	if !migrationApplied(db, 6) {
+		for i, num := range []string{"118", "119", "120", "121", "122", "123", "124", "125", "126", "127", "128", "129"} {
+			if _, err := db.Exec(`
+				INSERT OR IGNORE INTO trains (corridor_id, train_number, display_name, slug, sort_order)
+				SELECT id, ?, ?, ?, ? FROM corridors WHERE slug='caltrain'`,
+				num, "Caltrain "+num, "caltrain-"+num, i+1); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 6)
 	}
 
 	return nil

@@ -535,8 +535,10 @@ function findCorridorSlug(name) {
     var veryLate = t.delayMin > 60;
     var html = '<strong style="font-size:.9rem">' + esc(t.displayName) + (veryLate ? ' 💀' : '') + '</strong>';
     if (t.corridorName) html += '<br><span style="font-size:.8rem">' + esc(t.corridorName) + '</span>';
-    html += '<br><span style="font-size:.8rem;color:' + (veryLate ? '#000' : STATUS_COLOR[t.status]) + '">' +
-            esc(delayText(t.delayMin)) + '</span>';
+    if (t.hasDelayInfo) {
+      html += '<br><span style="font-size:.8rem;color:' + (veryLate ? '#000' : STATUS_COLOR[t.status]) + '">' +
+              esc(delayText(t.delayMin)) + '</span>';
+    }
 
     var speedMph = st.speedMps != null ? Math.round(mpsToMph(st.speedMps)) : t.speed;
     var arrow = COMPASS_ARROW[t.heading] || '';

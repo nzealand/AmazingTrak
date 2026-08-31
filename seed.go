@@ -162,6 +162,14 @@ var corridorSeeds = []corridorSeed{
 		"Seasonal Friday/Sunday service between New York Penn Station and Pittsfield, Massachusetts, serving the Berkshire region.", 45},
 	{"Winter Park Express", "winter-park-express", "Rocky Mountains",
 		"Seasonal ski-season service between Denver Union Station and Winter Park/Fraser ski resort in Colorado.", 46},
+	// 47 — not Amtrak; a separately-operated commuter agency (San Joaquin
+	// Regional Rail Commission), added for live-tracking coverage alongside
+	// Amtrak's California corridors. No trains seeded here — add via the
+	// admin panel, since the live feed matches by train_number found in the
+	// database at poll time (see caltrain.go), not by anything seeded ahead
+	// of time.
+	{"Caltrain", "caltrain", "California",
+		"Commuter rail service along the San Francisco Peninsula and South Bay, connecting San Francisco to San Jose and Gilroy. Operated by the Peninsula Corridor Joint Powers Board, not Amtrak.", 47},
 }
 
 // trainSeeds maps corridor index (0-based) → train numbers.
@@ -295,6 +303,10 @@ var trainSeeds = [][]string{
 	{"1233", "1234", "1246"},
 	// 46 Winter Park Express
 	{"1105", "1106"},
+	// 47 Caltrain — empirically observed from a live 511.org GTFS-RT feed
+	// sample (2026-08-31, late morning weekday), not a full published
+	// timetable. Add the rest via the admin panel as you verify them.
+	{"118", "119", "120", "121", "122", "123", "124", "125", "126", "127", "128", "129"},
 }
 
 // otpSeeds maps corridor ID (1-based) → on-time percent.
@@ -376,9 +388,16 @@ func seedDB(db *sql.DB, adminUsername, adminPassword string) error {
 	// 2. Seed trains
 	for i, nums := range trainSeeds {
 		corridorID := i + 1
+		// Every corridor here is Amtrak-operated except Caltrain (see
+		// corridorSeeds), so its trains get an "amtrak-"/"Amtrak " slug and
+		// display name; Caltrain gets its own operator name instead.
+		prefix, label := "amtrak", "Amtrak"
+		if corridorSeeds[i].slug == "caltrain" {
+			prefix, label = "caltrain", "Caltrain"
+		}
 		for j, num := range nums {
-			slug := "amtrak-" + num
-			name := "Amtrak " + num
+			slug := prefix + "-" + num
+			name := label + " " + num
 			_, err := tx.Exec(
 				`INSERT INTO trains (corridor_id, train_number, display_name, slug, sort_order) VALUES (?, ?, ?, ?, ?)`,
 				corridorID, num, name, slug, j+1,

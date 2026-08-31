@@ -237,30 +237,47 @@
 
   <section>
     <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Live Train Positions</h3>
-    <form method="post" action="{{.AdminPrefix}}/settings" class="admin-form">
-      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-      <input type="hidden" name="action" value="live_trains">
-      <div class="form-group">
-        <label class="form-label">
-          <input type="hidden" name="live_trains_enabled" value="0">
-          <input type="checkbox" name="live_trains_enabled" value="1" {{if $d.Prefs.LiveTrainsEnabled}}checked{{end}}>
-          Show live train positions on the public map
-        </label>
-        <div class="form-hint">
-          Plots currently-running trains on <a href="/map" target="_blank" rel="noopener">/map</a>, colored by how late they are, with each marker linking to its train page. Only trains that exist in your database are shown.
-          <br>
-          Position data comes from the third-party <a href="https://amtraker.com/" target="_blank" rel="noopener">Amtraker</a> API; Amtrak's own GPS can lag several minutes behind, so treat positions as approximate. While this is off, the site never contacts the API and the map shows route lines only.
+    <p style="font-size:.875rem;color:var(--muted);margin-bottom:1rem">
+      Plots currently-running trains on <a href="/map" target="_blank" rel="noopener">/map</a>, colored by how late they are (where known), with each marker linking to its train page. Only trains that exist in your database are shown. Each source below is independent — while a source is off, the site never contacts that source's API.
+    </p>
+    {{range $d.LiveSources}}
+    <div style="border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem">
+      <form method="post" action="{{$.AdminPrefix}}/settings" class="admin-form">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="action" value="live_source">
+        <input type="hidden" name="source_key" value="{{.Key}}">
+        <h4 style="font-size:.925rem;font-weight:600;margin-bottom:.5rem">{{.DisplayName}}</h4>
+        {{if eq .Key "amtrak"}}
+        <p style="font-size:.8rem;color:var(--muted);margin-bottom:.75rem">Position data comes from the third-party <a href="https://amtraker.com/" target="_blank" rel="noopener">Amtraker</a> API; Amtrak's own GPS can lag several minutes behind, so treat positions as approximate.</p>
+        {{end}}
+        {{if eq .Key "caltrain"}}
+        <p style="font-size:.8rem;color:var(--muted);margin-bottom:.75rem">Position data comes from the <a href="https://511.org/open-data" target="_blank" rel="noopener">511.org SF Bay Open Data</a> GTFS-Realtime feed. Delay/next-station info isn't available from this source yet — only position, speed, and heading.</p>
+        {{end}}
+        <div class="form-group">
+          <label class="form-label">
+            <input type="hidden" name="enabled" value="0">
+            <input type="checkbox" name="enabled" value="1" {{if .Enabled}}checked{{end}}>
+            Show on the public map
+          </label>
         </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="live_trains_poll_seconds">Poll interval (seconds)</label>
-        <input type="number" id="live_trains_poll_seconds" name="live_trains_poll_seconds" min="90" max="600" step="1" value="{{$d.Prefs.LiveTrainsPollSeconds}}" style="max-width:8rem">
-        <div class="form-hint">
-          How often the server checks Amtraker for updated positions. 90 seconds is the floor — Amtraker itself only refreshes about that often, so polling faster gains nothing. 600 seconds (10 min) matches other public trackers like transitdocs.com. The map's own on-screen movement between real updates (an animated best guess based on each train's speed and heading) is unaffected by this setting.
+        {{if eq .Key "caltrain"}}
+        <div class="form-group">
+          <label class="form-label">511.org API key</label>
+          <input class="form-input" type="text" name="api_key" value="{{.APIKey}}" placeholder="free key from 511.org/open-data" style="max-width:24rem">
+          <div class="form-hint">Required before this source can be enabled. Free — register at <a href="https://511.org/open-data" target="_blank" rel="noopener">511.org/open-data</a>.</div>
         </div>
-      </div>
-      <button class="btn btn-primary" type="submit">Save Live Train Settings</button>
-    </form>
+        {{end}}
+        <div class="form-group">
+          <label class="form-label">Poll interval (seconds)</label>
+          <input type="number" name="poll_seconds" min="90" max="600" step="1" value="{{.PollSeconds}}" style="max-width:8rem">
+          <div class="form-hint">90 seconds is the floor across all sources. 511.org limits each API key to 60 requests/hour by default — if you enable more than one 511.org-backed source on the same key, keep this in mind when picking intervals.</div>
+        </div>
+        {{if .LastError}}<div class="form-hint" style="color:#b91c1c;margin-bottom:.75rem">Last error: {{.LastError}}</div>{{end}}
+        {{if .LastPolledAt}}<div class="form-hint" style="margin-bottom:.75rem">Last polled: {{.LastPolledAt}} UTC</div>{{end}}
+        <button class="btn btn-primary" type="submit">Save</button>
+      </form>
+    </div>
+    {{end}}
   </section>
 
   <section>
