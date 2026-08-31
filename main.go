@@ -698,6 +698,16 @@ func main() {
 	if err := migrateStopCoordinates(db); err != nil {
 		log.Fatal("migrateStopCoordinates:", err)
 	}
+	// Same reasoning as migrateStopCoordinates immediately above: without
+	// this, a brand new database's stops (from data.sql plus
+	// stations_septa_brightline.go, all seeded with slug='' since neither
+	// sets one) would never get a slug backfilled, breaking every
+	// /stations/{slug} link site-wide. Confirmed empirically against a fresh
+	// DB before this fix — production is unaffected since its stops already
+	// got slugs from this same migration during an earlier upgrade.
+	if err := migrateStopSlugs(db); err != nil {
+		log.Fatal("migrateStopSlugs:", err)
+	}
 
 	if prefs, err := getSitePrefs(db); err == nil {
 		if prefs.SiteName != "" {

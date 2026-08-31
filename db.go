@@ -456,6 +456,68 @@ func runMigrations(db *sql.DB) error {
 		markMigration(db, 12)
 	}
 
+	// Migration 13: seed the SEPTA Regional Rail and Brightline station
+	// lists on already-seeded (upgraded) databases, from each agency's own
+	// public static GTFS stops.txt (see stations_septa_brightline.go). Same
+	// fresh-install hazard and guard as migration 11 (see its comment); a
+	// fresh install instead gets these from seedDB calling seedCorridorStops
+	// directly. No per-train schedule (train_stops) data — that gap is
+	// pre-existing for every non-Amtrak corridor, not something this fixes.
+	if !migrationApplied(db, 13) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			if err := seedCorridorStops(db, "septa", septaStops); err != nil {
+				return err
+			}
+			if err := seedCorridorStops(db, "brightline", brightlineStops); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 13)
+	}
+
+	// Migration 14: replace the original 12-train Caltrain sample (migration
+	// 6, one live-poll snapshot) with the full published weekday + weekend
+	// timetable — user reported train 514 missing from the map (2026-08-31),
+	// which turned out to be one of many numbers that one-poll sample never
+	// had a chance to see. Sourced from Caltrain's own static GTFS
+	// (data.trilliumtransit.com, feed_id caltrain-ca-us, valid 2026-01-31 to
+	// 2027-01-31) — no 511.org API key needed for this feed, unlike the live
+	// position poll. Same INSERT OR IGNORE pattern as migration 6/9/12; safe
+	// to run even though migration 6 already added 12 of these numbers.
+	if !migrationApplied(db, 14) {
+		nums := []string{
+			"101", "102", "103", "104", "105", "106", "107", "108", "109", "110",
+			"111", "112", "113", "114", "115", "116", "117", "118", "119", "120",
+			"121", "122", "123", "124", "125", "126", "127", "128", "129", "130",
+			"131", "132", "133", "134", "135", "136", "137", "138", "139", "140",
+			"141", "142", "143", "144", "145", "146", "147", "148", "149", "150",
+			"151", "152", "153", "154", "155", "156", "157", "158", "159", "160",
+			"161", "162", "163", "164", "165", "166", "167", "168", "169", "170",
+			"171", "172", "173", "174", "176", "401", "404", "405", "408", "409",
+			"412", "413", "416", "417", "420", "421", "424", "425", "428", "429",
+			"502", "503", "506", "507", "510", "511", "514", "515", "518", "519",
+			"522", "523", "526", "527", "805", "807", "809", "811", "814", "816",
+			"820", "822", "601", "602", "603", "604", "605", "606", "607", "608",
+			"609", "610", "611", "612", "613", "614", "615", "616", "617", "618",
+			"619", "620", "621", "622", "623", "624", "625", "626", "627", "628",
+			"629", "630", "631", "632", "633", "634", "635", "636", "637", "638",
+			"639", "640", "641", "642", "643", "644", "645", "646", "647", "648",
+			"649", "650", "651", "652", "653", "654", "655", "656", "657", "658",
+			"659", "660", "661", "662", "663", "664", "665", "668",
+		}
+		for i, num := range nums {
+			if _, err := db.Exec(`
+				INSERT OR IGNORE INTO trains (corridor_id, train_number, display_name, slug, sort_order)
+				SELECT id, ?, ?, ?, ? FROM corridors WHERE slug='caltrain'`,
+				num, "Caltrain "+num, "caltrain-"+num, i+1); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 14)
+	}
+
 	return nil
 }
 

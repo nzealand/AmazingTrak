@@ -325,44 +325,48 @@ var trainSeeds = [][]string{
 	{"1233", "1234", "1246"},
 	// 46 Winter Park Express
 	{"1105", "1106"},
-	// 47 Caltrain — empirically observed from a live 511.org GTFS-RT feed
-	// sample (2026-08-31, late morning weekday), not a full published
-	// timetable. Add the rest via the admin panel as you verify them.
-	{"118", "119", "120", "121", "122", "123", "124", "125", "126", "127", "128", "129"},
+	// 47 Caltrain — full weekday + weekend timetable, sourced from
+	// Caltrain's own published static GTFS (data.trilliumtransit.com,
+	// feed_id caltrain-ca-us, valid 2026-01-31 to 2027-01-31), not a 511.org
+	// live-poll sample. 112 weekday numbers (101-176 Local, 401-429
+	// Limited, 502-527 Express, 805-822 South County) + 66 weekend numbers
+	// (601-668). Confirmed empirically (2026-08-31): this feed needs no
+	// 511.org API key, unlike the live GTFS-RT position feed.
+	{
+		"101", "102", "103", "104", "105", "106", "107", "108", "109", "110",
+		"111", "112", "113", "114", "115", "116", "117", "118", "119", "120",
+		"121", "122", "123", "124", "125", "126", "127", "128", "129", "130",
+		"131", "132", "133", "134", "135", "136", "137", "138", "139", "140",
+		"141", "142", "143", "144", "145", "146", "147", "148", "149", "150",
+		"151", "152", "153", "154", "155", "156", "157", "158", "159", "160",
+		"161", "162", "163", "164", "165", "166", "167", "168", "169", "170",
+		"171", "172", "173", "174", "176", "401", "404", "405", "408", "409",
+		"412", "413", "416", "417", "420", "421", "424", "425", "428", "429",
+		"502", "503", "506", "507", "510", "511", "514", "515", "518", "519",
+		"522", "523", "526", "527", "805", "807", "809", "811", "814", "816",
+		"820", "822", "601", "602", "603", "604", "605", "606", "607", "608",
+		"609", "610", "611", "612", "613", "614", "615", "616", "617", "618",
+		"619", "620", "621", "622", "623", "624", "625", "626", "627", "628",
+		"629", "630", "631", "632", "633", "634", "635", "636", "637", "638",
+		"639", "640", "641", "642", "643", "644", "645", "646", "647", "648",
+		"649", "650", "651", "652", "653", "654", "655", "656", "657", "658",
+		"659", "660", "661", "662", "663", "664", "665", "668",
+	},
 	// 48 ACE — derived from static GTFS trip ids (ACE01..ACE08); ACE runs
 	// only ~8-10 weekday peak trains, odd westbound/even eastbound.
 	{"1", "2", "3", "4", "5", "6", "7", "8"},
-	// 49 MBTA Commuter Rail — empirically observed from a live MBTA V3 API
-	// sample (2026-08-31, weekday afternoon) across all its branch lines.
-	{
-		"45", "46", "148", "149", "247", "250", "347", "348", "421", "424",
-		"545", "550", "645", "646", "743", "843", "847", "848", "852", "946",
-		"1028", "1069", "1147", "1246", "1419", "1653", "1656", "1748",
-		"1919", "2021", "2028", "2030",
-	},
-	// 50 LIRR — empirically observed from a live MTA GTFS-RT feed sample
-	// (2026-08-31, weekday afternoon).
-	{
-		"8", "13", "38", "43", "69", "93", "150", "152", "156", "157", "159",
-		"161", "163", "258", "352", "353", "354", "355", "452", "455", "552",
-		"557", "652", "655", "752", "753", "755", "809", "853", "854", "855",
-		"951", "1297", "1298", "1553", "1554", "1555", "1556", "1557", "1558",
-		"1653", "1752", "1753", "1951", "1952", "1953", "1954", "1955", "1956",
-		"1957", "1958", "1959", "2752", "2753", "2754", "2755", "2898", "2900",
-		"2909", "2911", "2913", "2919",
-	},
-	// 51 SEPTA Regional Rail — empirically observed from a live TrainView API
-	// sample (2026-08-31, afternoon weekday) across all 13 branch lines.
-	{
-		"452", "457", "846", "849", "850", "1085", "2388", "2579", "2591",
-		"3537", "3541", "3548", "3552", "4587", "4750", "4754", "5344", "5347",
-		"5349", "5351", "5355", "5496", "6228", "6229", "6256", "6313", "6342",
-		"6345", "6550", "6807", "7455", "9224", "9229", "9231", "9546", "9589",
-		"9593", "9748", "9750", "9757", "9759",
-	},
-	// 52 Brightline — empirically observed from a live GTFS-Realtime feed
-	// sample (2026-08-31, afternoon, three polls a minute apart).
-	{"5150", "5151", "5152", "5340", "5347", "5348", "5355", "5356", "5363"},
+	// 49 MBTA Commuter Rail — full weekday+weekend timetable; see
+	// trains_mbta_lirr_septa_brightline.go for sourcing.
+	mbtaTrainNumbers,
+	// 50 LIRR — full weekday+weekend timetable; see
+	// trains_mbta_lirr_septa_brightline.go for sourcing.
+	lirrTrainNumbers,
+	// 51 SEPTA Regional Rail — full weekday+weekend timetable; see
+	// trains_mbta_lirr_septa_brightline.go for sourcing.
+	septaTrainNumbers,
+	// 52 Brightline — full weekday+weekend timetable; see
+	// trains_mbta_lirr_septa_brightline.go for sourcing.
+	brightlineTrainNumbers,
 }
 
 // otpSeeds maps corridor ID (1-based) → on-time percent.
@@ -439,6 +443,27 @@ func seedDB(db *sql.DB, adminUsername, adminPassword string) error {
 		if err != nil {
 			return fmt.Errorf("seed corridor %q: %w", c.name, err)
 		}
+	}
+
+	// 1b. Seed station lists for every non-Amtrak corridor (see
+	// stations_septa_brightline.go and stations_mbta_lirr_ace_caltrain.go).
+	if err := seedCorridorStops(tx, "septa", septaStops); err != nil {
+		return fmt.Errorf("seed SEPTA stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "brightline", brightlineStops); err != nil {
+		return fmt.Errorf("seed Brightline stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "mbta-commuter-rail", mbtaStops); err != nil {
+		return fmt.Errorf("seed MBTA stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "lirr", lirrStops); err != nil {
+		return fmt.Errorf("seed LIRR stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "ace", aceStops); err != nil {
+		return fmt.Errorf("seed ACE stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "caltrain", caltrainStops); err != nil {
+		return fmt.Errorf("seed Caltrain stops: %w", err)
 	}
 
 	// 2. Seed trains
