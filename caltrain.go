@@ -2,40 +2,30 @@ package main
 
 import (
 	"fmt"
-	"time"
-
-	"github.com/MobilityData/gtfs-realtime-bindings/golang/gtfs"
-	"google.golang.org/protobuf/proto"
 )
 
-// Caltrain live positions, sourced from the 511.org SF Bay Open Data GTFS-RT
-// feed (agency code "CT"). Unlike Amtraker, this is a standard GTFS-RT
-// VehiclePositions feed (protobuf, not JSON) and requires a free API key
-// (registered by an admin at https://511.org/open-data, entered on the
-// Settings page — see live_sources.api_key).
+// Caltrain live positions, sourced from 511.org's shared SF Bay regional
+// GTFS-RT feed (see bay511.go) — not a Caltrain-specific request, so
+// enabling ACE alongside this costs no extra 511.org calls. Requires a free
+// API key (registered by an admin at https://511.org/open-data, entered on
+// the Settings page — see live_sources.api_key).
 //
-// Confirmed empirically against a real payload: Caltrain's GTFS-RT trip_id
-// is exactly the public-facing train number (e.g. trip_id "118" == Train
-// 118), so matching is a plain lookup against trains.train_number within
-// the Caltrain corridor — no cross-corridor disambiguation needed, unlike
-// Amtrak where one number can appear in several corridors.
+// Confirmed empirically against a real payload: Caltrain's native GTFS-RT
+// trip_id (after bay511Vehicles strips the regional feed's "CT:" prefix) is
+// exactly the public-facing train number (e.g. trip_id "118" == Train 118),
+// so matching is a plain lookup against trains.train_number within the
+// Caltrain corridor — no cross-corridor disambiguation needed, unlike Amtrak
+// where one number can appear in several corridors.
 //
-// v1 only calls VehiclePositions (position/speed/heading) — not TripUpdates
-// (delay/next-station), to keep this source's cost to one 511.org request
-// per poll. 511.org's default rate limit is 60 requests/hour *per API key*,
-// shared across every source that key is used for — ACE (see acetrain.go)
-// runs on the same 511.org account, so its request budget comes out of the
-// same 60/hour; keep an eye on combined poll intervals rather than tuning
-// each source in isolation. TripUpdates support (delay/ETA) can be added
-// later as a second request per poll; see HasDelayInfo on liveTrain.
-const caltrainVehiclePositionsURL = "https://api.511.org/transit/vehiclepositions?api_key=%s&agency=CT"
-
+// v1 only uses VehiclePositions (position/speed/heading) — not TripUpdates
+// (delay/next-station). TripUpdates support can be added later; see
+// HasDelayInfo on liveTrain.
 type caltrainSource struct{}
 
 func (caltrainSource) Key() string       { return "caltrain" }
 func (caltrainSource) NeedsAPIKey() bool { return true }
 func (caltrainSource) Description() string {
-	return "Position data comes from the 511.org SF Bay Open Data GTFS-Realtime feed. Delay/next-station info isn't available from this source yet — only position, speed, and heading."
+	return "Position data comes from the 511.org SF Bay Open Data GTFS-Realtime feed (shared with ACE — see its row below). Delay/next-station info isn't available from this source yet — only position, speed, and heading."
 }
 
 func (caltrainSource) Fetch(app *App) ([]liveTrain, error) {
@@ -55,30 +45,16 @@ func (caltrainSource) Fetch(app *App) ([]liveTrain, error) {
 		return nil, fmt.Errorf("no active Caltrain trains in the database to match against")
 	}
 
-	body, err := fetchGTFSRTBody(fmt.Sprintf(caltrainVehiclePositionsURL, src.APIKey))
+	feed, err := fetchBay511Regional(src.APIKey)
 	if err != nil {
 		return nil, err
 	}
 
-	var feed gtfs.FeedMessage
-	if err := proto.Unmarshal(body, &feed); err != nil {
-		return nil, err
-	}
-
 	var out []liveTrain
-	for _, entity := range feed.Entity {
-		vp := entity.GetVehicle()
-		if vp == nil {
-			continue
-		}
-		pos := vp.GetPosition()
-		if pos == nil {
-			continue
-		}
-
-		trainNum := vp.GetTrip().GetTripId()
+	for _, v := range bay511Vehicles(feed, "CT") {
+		trainNum := v.TripID
 		if trainNum == "" {
-			trainNum = vp.GetVehicle().GetLabel()
+			trainNum = v.VehicleLabel
 		}
 		if trainNum == "" {
 			continue
@@ -87,22 +63,7 @@ func (caltrainSource) Fetch(app *App) ([]liveTrain, error) {
 		if !ok {
 			continue
 		}
-
-		lt := liveTrain{
-			TrainNum:     trainNum,
-			DisplayName:  match.DisplayName,
-			TrainSlug:    match.Slug,
-			CorridorName: match.CorridorName,
-			CorridorSlug: match.CorridorSlug,
-			Lat:          float64(pos.GetLatitude()),
-			Lon:          float64(pos.GetLongitude()),
-			Heading:      bearingToCompass(float64(pos.GetBearing())),
-			Speed:        int(mpsToMph(float64(pos.GetSpeed())) + 0.5),
-		}
-		if ts := vp.GetTimestamp(); ts > 0 {
-			lt.LastUpdated = time.Unix(int64(ts), 0).UTC().Format(time.RFC3339)
-		}
-		out = append(out, lt)
+		out = append(out, bay511LiveTrain(v, match, trainNum))
 	}
 	return out, nil
 }

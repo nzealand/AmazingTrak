@@ -2,6 +2,12 @@
 
 All notable changes to AmazingTrak are documented here.
 
+===3.15.1=====
+
+### 511.org request sharing (Caltrain + ACE)
+- Caltrain and ACE now share a single fetch of 511.org's regional SF Bay GTFS-Realtime feed instead of each hitting 511.org separately — enabling both costs exactly the same one request per ~90s as enabling just one, well inside the 60-requests/hour per-key limit regardless of how many of the two are turned on. Confirmed against a real payload that the regional feed namespaces each agency's data (e.g. Caltrain trip "124" appears there as "CT:124"), which the shared fetch strips before handing off to each source's existing, already-verified matching logic.
+- No admin-facing change — same two rows, same settings, same API key entry.
+
 ===3.15.0=====
 
 ### Three more live sources: ACE, MBTA Commuter Rail, LIRR

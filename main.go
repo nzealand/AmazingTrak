@@ -213,7 +213,7 @@ var funcMap = template.FuncMap{
 			return "On time"
 		}
 	},
-	"siteName":  func() string { return getSiteName() },
+	"siteName": func() string { return getSiteName() },
 	"adminNavStyle": func() template.HTML {
 		t, ok := siteThemes[getAdminTheme()]
 		if !ok {
