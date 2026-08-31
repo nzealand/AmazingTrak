@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
 	"github.com/MobilityData/gtfs-realtime-bindings/golang/gtfs"
@@ -25,17 +23,20 @@ import (
 // v1 only calls VehiclePositions (position/speed/heading) — not TripUpdates
 // (delay/next-station), to keep this source's cost to one 511.org request
 // per poll. 511.org's default rate limit is 60 requests/hour *per API key*,
-// shared across every source that key is used for — if ACE is later added
-// on the same key, its own request budget comes out of the same 60/hour, so
-// keep an eye on combined poll intervals rather than tuning each source in
-// isolation. TripUpdates support (delay/ETA) can be added later as a second
-// request per poll; see HasDelayInfo on liveTrain.
+// shared across every source that key is used for — ACE (see acetrain.go)
+// runs on the same 511.org account, so its request budget comes out of the
+// same 60/hour; keep an eye on combined poll intervals rather than tuning
+// each source in isolation. TripUpdates support (delay/ETA) can be added
+// later as a second request per poll; see HasDelayInfo on liveTrain.
 const caltrainVehiclePositionsURL = "https://api.511.org/transit/vehiclepositions?api_key=%s&agency=CT"
 
 type caltrainSource struct{}
 
 func (caltrainSource) Key() string       { return "caltrain" }
 func (caltrainSource) NeedsAPIKey() bool { return true }
+func (caltrainSource) Description() string {
+	return "Position data comes from the 511.org SF Bay Open Data GTFS-Realtime feed. Delay/next-station info isn't available from this source yet — only position, speed, and heading."
+}
 
 func (caltrainSource) Fetch(app *App) ([]liveTrain, error) {
 	src, err := getLiveSource(app.db, "caltrain")
@@ -54,24 +55,7 @@ func (caltrainSource) Fetch(app *App) ([]liveTrain, error) {
 		return nil, fmt.Errorf("no active Caltrain trains in the database to match against")
 	}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf(caltrainVehiclePositionsURL, src.APIKey), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "AmazingTrak/1.0 (+https://foamer.online)")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("511.org HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	body, err := fetchGTFSRTBody(fmt.Sprintf(caltrainVehiclePositionsURL, src.APIKey))
 	if err != nil {
 		return nil, err
 	}

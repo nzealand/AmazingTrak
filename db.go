@@ -282,6 +282,99 @@ func runMigrations(db *sql.DB) error {
 		markMigration(db, 6)
 	}
 
+	// Migration 7: register ACE, MBTA Commuter Rail, and LIRR as live
+	// sources — disabled by default. ACE shares 511.org's account/key model
+	// with Caltrain (needs a key); MBTA and LIRR need no key (see mbta.go,
+	// mtalirr.go for why).
+	if !migrationApplied(db, 7) {
+		rows := []struct {
+			key, name string
+			poll      int
+		}{
+			{"ace", "ACE (511.org)", 90},
+			{"mbta", "MBTA Commuter Rail", 90},
+			{"lirr", "LIRR", 90},
+		}
+		for _, r := range rows {
+			if _, err := db.Exec(`INSERT OR IGNORE INTO live_sources (source_key, display_name, enabled, poll_seconds) VALUES (?,?,0,?)`,
+				r.key, r.name, r.poll); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 7)
+	}
+
+	// Migration 8: add the ACE, MBTA Commuter Rail, and LIRR corridors to
+	// already-seeded (upgraded) databases — same fresh-install hazard and
+	// guard as migration 5 (see its comment); a fresh install instead gets
+	// these from corridorSeeds in seed.go.
+	if !migrationApplied(db, 8) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			corridors := []struct{ name, slug, region, desc string }{
+				{"ACE", "ace", "California",
+					"Altamont Corridor Express commuter rail connecting Stockton and San Jose through the Altamont Pass. Operated by the San Joaquin Regional Rail Commission, not Amtrak."},
+				{"MBTA Commuter Rail", "mbta-commuter-rail", "New England",
+					"Boston-area commuter rail network operated by the MBTA across its Providence, Franklin, Needham, Fairmount, Worcester, Fitchburg, Lowell, Haverhill, Newburyport, Kingston, Greenbush, and New Bedford lines. Not Amtrak."},
+				{"LIRR", "lirr", "Northeast",
+					"Long Island Rail Road commuter service connecting Manhattan (Penn Station/Grand Central) to Long Island. Operated by the MTA, not Amtrak."},
+			}
+			for _, c := range corridors {
+				if _, err := db.Exec(`
+					INSERT INTO corridors (name, slug, region, description, sort_order)
+					SELECT ?, ?, ?, ?, COALESCE((SELECT MAX(sort_order) FROM corridors), 0) + 1
+					WHERE NOT EXISTS (SELECT 1 FROM corridors WHERE slug=?)`,
+					c.name, c.slug, c.region, c.desc, c.slug); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 8)
+	}
+
+	// Migration 9: seed a starter set of real, currently-observed train
+	// numbers for ACE, MBTA Commuter Rail, and LIRR on already-seeded
+	// (upgraded) databases — mirrors trainSeeds in seed.go for fresh
+	// installs. Empirically observed from each source's live feed on
+	// 2026-08-31; not a full published timetable for any of the three. A
+	// no-op on a fresh install (no corridors exist yet — see migration 8's
+	// comment).
+	if !migrationApplied(db, 9) {
+		trainSets := []struct {
+			slug, prefix, label string
+			nums                []string
+		}{
+			{"ace", "ace", "ACE", []string{"1", "2", "3", "4", "5", "6", "7", "8"}},
+			{"mbta-commuter-rail", "mbta", "MBTA", []string{
+				"45", "46", "148", "149", "247", "250", "347", "348", "421", "424",
+				"545", "550", "645", "646", "743", "843", "847", "848", "852", "946",
+				"1028", "1069", "1147", "1246", "1419", "1653", "1656", "1748",
+				"1919", "2021", "2028", "2030",
+			}},
+			{"lirr", "lirr", "LIRR", []string{
+				"8", "13", "38", "43", "69", "93", "150", "152", "156", "157", "159",
+				"161", "163", "258", "352", "353", "354", "355", "452", "455", "552",
+				"557", "652", "655", "752", "753", "755", "809", "853", "854", "855",
+				"951", "1297", "1298", "1553", "1554", "1555", "1556", "1557", "1558",
+				"1653", "1752", "1753", "1951", "1952", "1953", "1954", "1955", "1956",
+				"1957", "1958", "1959", "2752", "2753", "2754", "2755", "2898", "2900",
+				"2909", "2911", "2913", "2919",
+			}},
+		}
+		for _, ts := range trainSets {
+			for i, num := range ts.nums {
+				if _, err := db.Exec(`
+					INSERT OR IGNORE INTO trains (corridor_id, train_number, display_name, slug, sort_order)
+					SELECT id, ?, ?, ?, ? FROM corridors WHERE slug=?`,
+					num, ts.label+" "+num, ts.prefix+"-"+num, i+1, ts.slug); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 9)
+	}
+
 	return nil
 }
 

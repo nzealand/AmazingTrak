@@ -376,6 +376,10 @@ type liveSource interface {
 	// NeedsAPIKey tells the admin Settings page whether to show an API-key
 	// field for this source.
 	NeedsAPIKey() bool
+	// Description is a short admin-facing note (may contain simple HTML,
+	// e.g. a link) about where this source's data comes from and any known
+	// limitations, shown on the Settings page.
+	Description() string
 	// Fetch pulls one poll's worth of trains, already matched to our own DB
 	// trains, from this source's upstream feed.
 	Fetch(app *App) ([]liveTrain, error)
@@ -384,8 +388,11 @@ type liveSource interface {
 // amtrakSource wraps the pre-existing Amtraker integration above.
 type amtrakSource struct{}
 
-func (amtrakSource) Key() string                         { return "amtrak" }
-func (amtrakSource) NeedsAPIKey() bool                   { return false }
+func (amtrakSource) Key() string       { return "amtrak" }
+func (amtrakSource) NeedsAPIKey() bool { return false }
+func (amtrakSource) Description() string {
+	return `Position data comes from the third-party <a href="https://amtraker.com/" target="_blank" rel="noopener">Amtraker</a> API; Amtrak's own GPS can lag several minutes behind, so treat positions as approximate.`
+}
 func (amtrakSource) Fetch(app *App) ([]liveTrain, error) { return fetchLiveTrains(app) }
 
 // registeredLiveSources lists every live-tracking provider the app knows how
@@ -394,6 +401,9 @@ func (amtrakSource) Fetch(app *App) ([]liveTrain, error) { return fetchLiveTrain
 var registeredLiveSources = []liveSource{
 	amtrakSource{},
 	caltrainSource{},
+	aceSource{},
+	mbtaSource{},
+	lirrSource{},
 }
 
 // liveSourceByKey looks up a registered source by its live_sources.source_key,

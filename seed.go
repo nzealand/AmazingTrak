@@ -21,6 +21,16 @@ type corridorSeed struct {
 	sort                            int
 }
 
+// nonAmtrakOperators maps a corridor slug to the train slug/display-name
+// prefix its trains should use instead of the default "amtrak-"/"Amtrak "
+// (see the train-seeding loop in seedDB below).
+var nonAmtrakOperators = map[string]struct{ prefix, label string }{
+	"caltrain":           {"caltrain", "Caltrain"},
+	"ace":                {"ace", "ACE"},
+	"mbta-commuter-rail": {"mbta", "MBTA"},
+	"lirr":               {"lirr", "LIRR"},
+}
+
 // corridorSeeds must be ordered so that auto-increment IDs match data.sql references (1..44).
 // Corridors 1–5: NEC (pure Amtrak). 6–30: State-Supported. 31–44: Long Distance (pure Amtrak).
 // 45–46: Seasonal.
@@ -162,14 +172,20 @@ var corridorSeeds = []corridorSeed{
 		"Seasonal Friday/Sunday service between New York Penn Station and Pittsfield, Massachusetts, serving the Berkshire region.", 45},
 	{"Winter Park Express", "winter-park-express", "Rocky Mountains",
 		"Seasonal ski-season service between Denver Union Station and Winter Park/Fraser ski resort in Colorado.", 46},
-	// 47 — not Amtrak; a separately-operated commuter agency (San Joaquin
-	// Regional Rail Commission), added for live-tracking coverage alongside
-	// Amtrak's California corridors. No trains seeded here — add via the
+	// 47–50 — not Amtrak; separately-operated commuter agencies added for
+	// live-tracking coverage (see caltrain.go, acetrain.go, mbta.go,
+	// mtalirr.go). Trains seeded below are a real starter set observed live
+	// from each feed, not a full published timetable — add more via the
 	// admin panel, since the live feed matches by train_number found in the
-	// database at poll time (see caltrain.go), not by anything seeded ahead
-	// of time.
+	// database at poll time, not by anything seeded ahead of time.
 	{"Caltrain", "caltrain", "California",
 		"Commuter rail service along the San Francisco Peninsula and South Bay, connecting San Francisco to San Jose and Gilroy. Operated by the Peninsula Corridor Joint Powers Board, not Amtrak.", 47},
+	{"ACE", "ace", "California",
+		"Altamont Corridor Express commuter rail connecting Stockton and San Jose through the Altamont Pass. Operated by the San Joaquin Regional Rail Commission, not Amtrak.", 48},
+	{"MBTA Commuter Rail", "mbta-commuter-rail", "New England",
+		"Boston-area commuter rail network operated by the MBTA across its Providence, Franklin, Needham, Fairmount, Worcester, Fitchburg, Lowell, Haverhill, Newburyport, Kingston, Greenbush, and New Bedford lines. Not Amtrak.", 49},
+	{"LIRR", "lirr", "Northeast",
+		"Long Island Rail Road commuter service connecting Manhattan (Penn Station/Grand Central) to Long Island. Operated by the MTA, not Amtrak.", 50},
 }
 
 // trainSeeds maps corridor index (0-based) → train numbers.
@@ -307,6 +323,28 @@ var trainSeeds = [][]string{
 	// sample (2026-08-31, late morning weekday), not a full published
 	// timetable. Add the rest via the admin panel as you verify them.
 	{"118", "119", "120", "121", "122", "123", "124", "125", "126", "127", "128", "129"},
+	// 48 ACE — derived from static GTFS trip ids (ACE01..ACE08); ACE runs
+	// only ~8-10 weekday peak trains, odd westbound/even eastbound.
+	{"1", "2", "3", "4", "5", "6", "7", "8"},
+	// 49 MBTA Commuter Rail — empirically observed from a live MBTA V3 API
+	// sample (2026-08-31, weekday afternoon) across all its branch lines.
+	{
+		"45", "46", "148", "149", "247", "250", "347", "348", "421", "424",
+		"545", "550", "645", "646", "743", "843", "847", "848", "852", "946",
+		"1028", "1069", "1147", "1246", "1419", "1653", "1656", "1748",
+		"1919", "2021", "2028", "2030",
+	},
+	// 50 LIRR — empirically observed from a live MTA GTFS-RT feed sample
+	// (2026-08-31, weekday afternoon).
+	{
+		"8", "13", "38", "43", "69", "93", "150", "152", "156", "157", "159",
+		"161", "163", "258", "352", "353", "354", "355", "452", "455", "552",
+		"557", "652", "655", "752", "753", "755", "809", "853", "854", "855",
+		"951", "1297", "1298", "1553", "1554", "1555", "1556", "1557", "1558",
+		"1653", "1752", "1753", "1951", "1952", "1953", "1954", "1955", "1956",
+		"1957", "1958", "1959", "2752", "2753", "2754", "2755", "2898", "2900",
+		"2909", "2911", "2913", "2919",
+	},
 }
 
 // otpSeeds maps corridor ID (1-based) → on-time percent.
@@ -388,12 +426,12 @@ func seedDB(db *sql.DB, adminUsername, adminPassword string) error {
 	// 2. Seed trains
 	for i, nums := range trainSeeds {
 		corridorID := i + 1
-		// Every corridor here is Amtrak-operated except Caltrain (see
-		// corridorSeeds), so its trains get an "amtrak-"/"Amtrak " slug and
-		// display name; Caltrain gets its own operator name instead.
+		// Every corridor here is Amtrak-operated except the ones listed
+		// here (see corridorSeeds), which get their own operator's name
+		// instead of an "amtrak-"/"Amtrak " slug and display name.
 		prefix, label := "amtrak", "Amtrak"
-		if corridorSeeds[i].slug == "caltrain" {
-			prefix, label = "caltrain", "Caltrain"
+		if p, ok := nonAmtrakOperators[corridorSeeds[i].slug]; ok {
+			prefix, label = p.prefix, p.label
 		}
 		for j, num := range nums {
 			slug := prefix + "-" + num

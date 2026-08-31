@@ -2,6 +2,16 @@
 
 All notable changes to AmazingTrak are documented here.
 
+===3.15.0=====
+
+### Three more live sources: ACE, MBTA Commuter Rail, LIRR
+- **ACE** (Altamont Corridor Express) added via the same 511.org account/key as Caltrain — enter the same key on its row in Settings. Runs only ~8-10 weekday peak trains, so an empty map off-peak is expected, not a bug.
+- **MBTA Commuter Rail** added via the official MBTA V3 API — filtered to Commuter Rail only (no subway, Green Line, bus, or ferry). No API key needed.
+- **LIRR** (Long Island Rail Road) added via the MTA's public GTFS-Realtime feed — no API key needed. Trains only, not the NYC subway.
+- All three verified against real live data before shipping (MBTA and LIRR end-to-end with real matched trains on the map; ACE's feed and matching logic verified against real schedule data, though live positions couldn't be confirmed since ACE wasn't running peak service at verification time).
+- Each new corridor is seeded with a starter set of real train numbers observed live from its feed — not a full published timetable. Add more via the admin panel as needed.
+- Settings page's per-source blurb/API-key-required text is now driven by each source's own code instead of being hardcoded per source in the template, so the next agency added there doesn't need a template edit.
+
 ===3.14.0=====
 
 ### Multi-source live train tracking

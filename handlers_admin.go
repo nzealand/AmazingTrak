@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1829,16 +1830,30 @@ func (app *App) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", 500)
 		return
 	}
-	liveSources, err := getLiveSources(app.db)
+	liveSourceRows, err := getLiveSources(app.db)
 	if err != nil {
 		http.Error(w, "Database error", 500)
 		return
+	}
+	type liveSourceView struct {
+		LiveSource
+		NeedsAPIKey bool
+		Description template.HTML
+	}
+	liveSources := make([]liveSourceView, 0, len(liveSourceRows))
+	for _, row := range liveSourceRows {
+		v := liveSourceView{LiveSource: row}
+		if src := liveSourceByKey(row.Key); src != nil {
+			v.NeedsAPIKey = src.NeedsAPIKey()
+			v.Description = template.HTML(src.Description())
+		}
+		liveSources = append(liveSources, v)
 	}
 	type settingsData struct {
 		User         AdminUser
 		Prefs        SitePreferences
 		HasResendKey bool
-		LiveSources  []LiveSource
+		LiveSources  []liveSourceView
 	}
 	app.renderAdmin(w, r, "settings.html", adminPage{
 		Title:     "Settings",
