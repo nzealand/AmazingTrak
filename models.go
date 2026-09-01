@@ -189,6 +189,9 @@ type SitePreferences struct {
 	// Live train positions on /map; off unless an admin enables it.
 	LiveTrainsEnabled     bool
 	LiveTrainsPollSeconds int
+	// CARTO basemap api_key for /map's dark-mode tiles; blank falls back to
+	// plain OSM tiles in dark mode instead of hitting CARTO unauthenticated.
+	CartoAPIKey string
 }
 
 type StationTrain struct {
@@ -915,13 +918,13 @@ func getSitePrefs(db *sql.DB) (SitePreferences, error) {
 		COALESCE(trusted_rate_per_hour,30), COALESCE(trusted_rate_per_day,100), COALESCE(trusted_comment_rate_per_hour,30), COALESCE(trusted_comment_rate_per_day,100),
 		COALESCE(pending_notify_level,0), COALESCE(admin_compact,0),
 		COALESCE(auto_approve_on_confirm,0), COALESCE(auto_approve_on_video,1),
-		COALESCE(live_trains_enabled,0), COALESCE(live_trains_poll_seconds,120) FROM site_preferences WHERE id=1`).
+		COALESCE(live_trains_enabled,0), COALESCE(live_trains_poll_seconds,120), COALESCE(carto_api_key,'') FROM site_preferences WHERE id=1`).
 		Scan(&p.ID, &p.DefaultTheme, &p.NotificationEmail, &p.RatePerMinute, &p.RatePerHour, &p.RatePerDay, &p.RegisterRatePerHour, &p.RegisterRatePerDay, &p.CommentRatePerHour, &p.CommentRatePerDay, &p.SiteName, &p.FaviconPath, &p.AdminTheme,
 			&p.SenderEmail, &p.EmailEnabled, &p.VerifyExpiryHours,
 			&p.TrustedRatePerHour, &p.TrustedRatePerDay, &p.TrustedCommentRatePerHour, &p.TrustedCommentRatePerDay,
 			&p.PendingNotifyLevel, &p.AdminCompact,
 			&p.AutoApproveOnConfirm, &p.AutoApproveOnVideo,
-			&p.LiveTrainsEnabled, &p.LiveTrainsPollSeconds)
+			&p.LiveTrainsEnabled, &p.LiveTrainsPollSeconds, &p.CartoAPIKey)
 	if err == sql.ErrNoRows {
 		return SitePreferences{DefaultTheme: "auto", RatePerMinute: 1, RatePerHour: 5, RatePerDay: 20, RegisterRatePerHour: 5, RegisterRatePerDay: 20, CommentRatePerHour: 10, CommentRatePerDay: 50, SiteName: "AmazingTrak", AdminTheme: "default",
 			VerifyExpiryHours: 24, TrustedRatePerHour: 30, TrustedRatePerDay: 100, TrustedCommentRatePerHour: 30, TrustedCommentRatePerDay: 100, LiveTrainsPollSeconds: 120}, nil

@@ -112,6 +112,10 @@ func runMigrations(db *sql.DB) error {
 	// Defaults to 2 min rather than the 90s floor to go a bit easier on the
 	// free upstream API out of the box.
 	db.Exec(`ALTER TABLE site_preferences ADD COLUMN live_trains_poll_seconds INTEGER NOT NULL DEFAULT 120`)
+	// CARTO's free anonymous dark-mode basemap tiles now require an account
+	// api_key; admin-entered on Settings rather than an env var so it's
+	// editable without a redeploy, matching the live_sources api_key pattern.
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN carto_api_key TEXT NOT NULL DEFAULT ''`)
 	// Password reset: a single-use token + timestamp, kept separate from the
 	// email-confirmation token so resetting a password never disturbs verification.
 	db.Exec(`ALTER TABLE users ADD COLUMN reset_token TEXT NOT NULL DEFAULT ''`)

@@ -2001,6 +2001,16 @@ func (app *App) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) 
 		app.logAudit(s.AdminUserID, "update_email_settings", "site_preferences", 1, "")
 		setFlash(w, "Email settings saved.")
 
+	case "map_tiles":
+		cartoKey := strings.TrimSpace(r.FormValue("carto_api_key"))
+		if _, err := app.db.Exec(`UPDATE site_preferences SET carto_api_key=? WHERE id=1`, cartoKey); err != nil {
+			setFlash(w, "Error saving map tile settings: "+err.Error())
+			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
+			return
+		}
+		app.logAudit(s.AdminUserID, "update_map_tile_settings", "site_preferences", 1, "")
+		setFlash(w, "Map tile settings saved.")
+
 	case "rate_limits":
 		perMin, err1 := strconv.Atoi(r.FormValue("rate_per_minute"))
 		perHour, err2 := strconv.Atoi(r.FormValue("rate_per_hour"))

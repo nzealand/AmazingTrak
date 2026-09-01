@@ -231,10 +231,12 @@ func (app *App) handleTrainsList(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) handleMap(w http.ResponseWriter, r *http.Request) {
 	corridors, _ := allCorridors(app.db, true)
+	prefs, _ := getSitePrefs(app.db)
 	type mapData struct {
 		Corridors        []Corridor
 		LiveTrains       bool
 		LiveTrainsPollMs int
+		CartoAPIKey      string
 	}
 	app.renderPublic(w, r, "map.html", publicPage{
 		Title: "Passenger Rail Route Map | AmazingTrak",
@@ -242,6 +244,7 @@ func (app *App) handleMap(w http.ResponseWriter, r *http.Request) {
 			Corridors:        corridors,
 			LiveTrains:       app.liveTrainsEnabled(),
 			LiveTrainsPollMs: int(app.liveTrainsPollInterval() / time.Millisecond),
+			CartoAPIKey:      prefs.CartoAPIKey,
 		},
 	})
 }

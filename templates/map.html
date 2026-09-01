@@ -83,6 +83,8 @@ var CORRIDOR_BY_NORM = {};
 var LIVE_TRAINS_ENABLED = {{if .Data.LiveTrains}}true{{else}}false{{end}};
 // Admin-configured poll interval (Settings → Live Train Positions), 90000-600000.
 var LIVE_TRAINS_POLL_MS = {{.Data.LiveTrainsPollMs}};
+// Set via CARTO_API_KEY env var; empty falls back to plain OSM tiles even in dark mode.
+var CARTO_API_KEY = "{{.Data.CartoAPIKey}}";
 function findCorridorSlug(name) {
   var norm = normSlug(jsSlugify(name));
   return CORRIDOR_BY_NORM[norm] || null;
@@ -214,7 +216,7 @@ function findCorridorSlug(name) {
     scrollWheelZoom: true
   });
 
-  mapTileLayer(L).addTo(map);
+  mapTileLayer(L, CARTO_API_KEY).addTo(map);
 
   // Sticky layer visibility: Route lines / Live trains / Vantage spots each
   // remember their on/off state across reloads, keyed by the same name shown

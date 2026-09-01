@@ -316,5 +316,22 @@
     <p style="font-size:.8rem;color:var(--muted);margin-top:.75rem">Delivery problems are logged on the <a href="{{.AdminPrefix}}/email-errors">Email Errors</a> page.</p>
   </section>
 
+  <section>
+    <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Map Tiles (CARTO)</h3>
+    <p style="font-size:.875rem;color:var(--muted);margin-bottom:1rem">
+      The public map's dark-mode basemap uses <a href="https://carto.com" target="_blank" rel="noopener">CARTO</a>'s dark tile set, which now requires an account API key. Without one, dark mode falls back to the plain (light) OpenStreetMap tiles instead.
+    </p>
+    <form method="post" action="{{.AdminPrefix}}/settings" class="admin-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="map_tiles">
+      <div class="form-group">
+        <label class="form-label">CARTO API key</label>
+        <input class="form-input" type="text" name="carto_api_key" value="{{$d.Prefs.CartoAPIKey}}" placeholder="Leave blank to use plain OSM tiles">
+        <div class="form-hint">From your <a href="https://carto.com" target="_blank" rel="noopener">CARTO</a> account's API key settings.</div>
+      </div>
+      <button class="btn btn-primary" type="submit">Save Map Tile Settings</button>
+    </form>
+  </section>
+
 </div>
 {{end}}
