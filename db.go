@@ -518,6 +518,64 @@ func runMigrations(db *sql.DB) error {
 		markMigration(db, 14)
 	}
 
+	// Migration 15: replace the original single-live-poll train samples for
+	// MBTA Commuter Rail, LIRR, SEPTA Regional Rail, and Brightline with
+	// each agency's full published weekday+weekend timetable — same
+	// completeness pass as migration 14 did for Caltrain, after the user
+	// asked whether other agencies were missing trains too. Data and
+	// sourcing notes live in trains_mbta_lirr_septa_brightline.go. ACE was
+	// audited too but left unchanged: its only available static-GTFS source
+	// was a stale Dec-2023 snapshot, and ACE's own current website confirms
+	// trains 1-8 (already seeded) are still correct.
+	if !migrationApplied(db, 15) {
+		trainSets := []struct {
+			slug, prefix, label string
+			nums                []string
+		}{
+			{"mbta-commuter-rail", "mbta", "MBTA", mbtaTrainNumbers},
+			{"lirr", "lirr", "LIRR", lirrTrainNumbers},
+			{"septa", "septa", "SEPTA", septaTrainNumbers},
+			{"brightline", "brightline", "Brightline", brightlineTrainNumbers},
+		}
+		for _, ts := range trainSets {
+			for i, num := range ts.nums {
+				if _, err := db.Exec(`
+					INSERT OR IGNORE INTO trains (corridor_id, train_number, display_name, slug, sort_order)
+					SELECT id, ?, ?, ?, ? FROM corridors WHERE slug=?`,
+					num, ts.label+" "+num, ts.prefix+"-"+num, i+1, ts.slug); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 15)
+	}
+
+	// Migration 16: seed station lists for MBTA Commuter Rail, LIRR, ACE,
+	// and Caltrain on already-seeded (upgraded) databases — same
+	// fresh-install hazard and guard as migration 13 (see its comment); a
+	// fresh install instead gets these from seedDB calling
+	// seedCorridorStops directly. Data and sourcing notes live in
+	// stations_mbta_lirr_ace_caltrain.go.
+	if !migrationApplied(db, 16) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			if err := seedCorridorStops(db, "mbta-commuter-rail", mbtaStops); err != nil {
+				return err
+			}
+			if err := seedCorridorStops(db, "lirr", lirrStops); err != nil {
+				return err
+			}
+			if err := seedCorridorStops(db, "ace", aceStops); err != nil {
+				return err
+			}
+			if err := seedCorridorStops(db, "caltrain", caltrainStops); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 16)
+	}
+
 	return nil
 }
 
