@@ -26,14 +26,17 @@ function isDarkTheme() {
 }
 
 // CARTO's free anonymous dark_all raster tiles now bounce unauthenticated
-// requests to a "get an API key" placeholder — an account-scoped api_key
-// query param is required. If none is configured server-side, fall back to
-// plain OpenStreetMap tiles rather than ever hitting CARTO unauthenticated.
+// requests to a "get an API key" placeholder — an account-scoped key query
+// param is required (confirmed against a real CARTO account key: the param
+// must be named "key", not "api_key" — the latter silently returns the same
+// watermarked placeholder as no key at all, no error). If none is configured
+// server-side, fall back to plain OpenStreetMap tiles rather than ever
+// hitting CARTO unauthenticated.
 function mapTileLayer(L, cartoKey) {
   var dark = isDarkTheme() && cartoKey;
   return L.tileLayer(
     dark
-      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=' + encodeURIComponent(cartoKey)
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=' + encodeURIComponent(cartoKey)
       : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     {
       maxZoom: 19,
