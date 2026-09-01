@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -59,7 +60,16 @@ func (aceSource) Fetch(app *App) ([]liveTrain, error) {
 	for _, v := range bay511Vehicles(feed, "CE") {
 		trainNum := ""
 		if m := aceTripIDPattern.FindStringSubmatch(v.TripID); m != nil {
-			trainNum = m[1]
+			// ACE's own trip ids are zero-padded ("ACE01".."ACE08" — confirmed
+			// against both a static GTFS snapshot and acerailpublic.etaspot.net's
+			// own "ACE 01".."ACE 08" display convention), but our seeded
+			// train_number rows are bare ("1".."8"), so a raw capture like "06"
+			// would never match index["6"]. Normalize by parsing the digits.
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				trainNum = strconv.Itoa(n)
+			} else {
+				trainNum = m[1]
+			}
 		}
 		if trainNum == "" {
 			trainNum = v.VehicleLabel
