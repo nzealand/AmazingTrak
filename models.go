@@ -943,10 +943,22 @@ type LiveSource struct {
 	APIKey       string
 	LastError    string
 	LastPolledAt string
+	// APISecret is a second credential field, used only by a source whose
+	// upstream needs a username+password pair (APIKey holds the username)
+	// instead of a single static key — currently just NJ Transit, whose
+	// RailData API exchanges these for a session token. Empty/unused by
+	// every other source.
+	APISecret string
+	// CachedToken persists a source's own upstream session token (if it
+	// uses one) across polls and process restarts, so a source with a
+	// tight daily token-generation limit (NJ Transit: 5/day) doesn't burn
+	// one on every restart. Empty/unused by every source that doesn't need
+	// a session token at all.
+	CachedToken string
 }
 
 func getLiveSources(db *sql.DB) ([]LiveSource, error) {
-	rows, err := db.Query(`SELECT source_key, display_name, enabled, poll_seconds, api_key, last_error, last_polled_at FROM live_sources ORDER BY source_key`)
+	rows, err := db.Query(`SELECT source_key, display_name, enabled, poll_seconds, api_key, last_error, last_polled_at, COALESCE(api_secret,''), COALESCE(cached_token,'') FROM live_sources ORDER BY source_key`)
 	if err != nil {
 		return nil, err
 	}
@@ -956,7 +968,7 @@ func getLiveSources(db *sql.DB) ([]LiveSource, error) {
 	for rows.Next() {
 		var s LiveSource
 		var enabled int
-		if err := rows.Scan(&s.Key, &s.DisplayName, &enabled, &s.PollSeconds, &s.APIKey, &s.LastError, &s.LastPolledAt); err != nil {
+		if err := rows.Scan(&s.Key, &s.DisplayName, &enabled, &s.PollSeconds, &s.APIKey, &s.LastError, &s.LastPolledAt, &s.APISecret, &s.CachedToken); err != nil {
 			return nil, err
 		}
 		s.Enabled = enabled != 0
@@ -968,15 +980,23 @@ func getLiveSources(db *sql.DB) ([]LiveSource, error) {
 func getLiveSource(db *sql.DB, key string) (LiveSource, error) {
 	var s LiveSource
 	var enabled int
-	err := db.QueryRow(`SELECT source_key, display_name, enabled, poll_seconds, api_key, last_error, last_polled_at FROM live_sources WHERE source_key=?`, key).
-		Scan(&s.Key, &s.DisplayName, &enabled, &s.PollSeconds, &s.APIKey, &s.LastError, &s.LastPolledAt)
+	err := db.QueryRow(`SELECT source_key, display_name, enabled, poll_seconds, api_key, last_error, last_polled_at, COALESCE(api_secret,''), COALESCE(cached_token,'') FROM live_sources WHERE source_key=?`, key).
+		Scan(&s.Key, &s.DisplayName, &enabled, &s.PollSeconds, &s.APIKey, &s.LastError, &s.LastPolledAt, &s.APISecret, &s.CachedToken)
 	s.Enabled = enabled != 0
 	return s, err
 }
 
-func updateLiveSourceConfig(db *sql.DB, key string, enabled bool, pollSeconds int, apiKey string) error {
-	_, err := db.Exec(`UPDATE live_sources SET enabled=?, poll_seconds=?, api_key=?, updated_at=CURRENT_TIMESTAMP WHERE source_key=?`,
-		boolToInt(enabled), pollSeconds, apiKey, key)
+func updateLiveSourceConfig(db *sql.DB, key string, enabled bool, pollSeconds int, apiKey, apiSecret string) error {
+	_, err := db.Exec(`UPDATE live_sources SET enabled=?, poll_seconds=?, api_key=?, api_secret=?, updated_at=CURRENT_TIMESTAMP WHERE source_key=?`,
+		boolToInt(enabled), pollSeconds, apiKey, apiSecret, key)
+	return err
+}
+
+// updateLiveSourceCachedToken persists a refreshed upstream session token —
+// separate from updateLiveSourceConfig since this is written by a background
+// poll (see njtransit.go), not an admin form submission.
+func updateLiveSourceCachedToken(db *sql.DB, key, token string) error {
+	_, err := db.Exec(`UPDATE live_sources SET cached_token=? WHERE source_key=?`, token, key)
 	return err
 }
 

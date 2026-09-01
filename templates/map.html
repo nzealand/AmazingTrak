@@ -300,7 +300,9 @@ function findCorridorSlug(name) {
     loadRouteSource('/api/ace-routes', 'ACE schedule'),
     loadRouteSource('/api/lirr-routes', 'LIRR schedule'),
     loadRouteSource('/api/septa-routes', 'SEPTA schedule'),
-    loadRouteSource('/api/brightline-routes', 'Brightline schedule')
+    loadRouteSource('/api/brightline-routes', 'Brightline schedule'),
+    loadRouteSource('/api/metra-routes', 'Metra schedule'),
+    loadRouteSource('/api/njtransit-routes', 'NJ Transit schedule')
   ]).then(function() {
     loading.style.display = 'none';
     var countEl = document.getElementById('map-route-count');

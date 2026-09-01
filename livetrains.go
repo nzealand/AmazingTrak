@@ -406,6 +406,8 @@ var registeredLiveSources = []liveSource{
 	lirrSource{},
 	septaSource{},
 	brightlineSource{},
+	metraSource{},
+	njtSource{},
 }
 
 // liveSourceByKey looks up a registered source by its live_sources.source_key,

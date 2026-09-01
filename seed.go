@@ -36,6 +36,18 @@ var nonAmtrakOperators = map[string]struct{ prefix, label string }{
 	// a train directly under it, so it gets "Caltrain"-prefixed naming
 	// consistent with the parent corridor instead of the "amtrak-" default.
 	"caltrain-south-county-connector": {"caltrain", "Caltrain"},
+	"metra-bnsf":                      {"metra-bnsf", "BNSF"},
+	"metra-up-n":                      {"metra-up-n", "UP-N"},
+	"metra-up-nw":                     {"metra-up-nw", "UP-NW"},
+	"metra-up-w":                      {"metra-up-w", "UP-W"},
+	"metra-md-n":                      {"metra-md-n", "MD-N"},
+	"metra-md-w":                      {"metra-md-w", "MD-W"},
+	"metra-ri":                        {"metra-ri", "RI"},
+	"metra-me":                        {"metra-me", "ME"},
+	"metra-sws":                       {"metra-sws", "SWS"},
+	"metra-ncs":                       {"metra-ncs", "NCS"},
+	"metra-hc":                        {"metra-hc", "HC"},
+	"nj-transit":                      {"njt", "NJT"},
 }
 
 // corridorSeeds must be ordered so that auto-increment IDs match data.sql references (1..44).
@@ -203,6 +215,37 @@ var corridorSeeds = []corridorSeed{
 	// the main Caltrain corridor.
 	{"Caltrain South County Connector", "caltrain-south-county-connector", "California",
 		"Peak-period weekday extension of Caltrain service south of Tamien into San Jose's South County — Blossom Hill, Capitol, Morgan Hill, San Martin, and Gilroy. Uses the same San Francisco-Gilroy trains (805-822) as the main Caltrain schedule; not a separate operator.", 53},
+	// 54–64 — Metra (Chicago), one corridor per line rather than one shared
+	// corridor: train numbers are not unique across lines (e.g. "300" exists
+	// on both Rock Island and UP-N), which a single corridor can't hold given
+	// this app's UNIQUE(corridor_id, train_number) constraint — see metra.go.
+	{"BNSF Line", "metra-bnsf", "Midwest",
+		"Metra commuter rail connecting Chicago Union Station to Aurora, Illinois, along the former Burlington Northern route. Operated by Metra, not Amtrak.", 54},
+	{"Union Pacific North Line", "metra-up-n", "Midwest",
+		"Metra commuter rail connecting Chicago's Ogilvie Transportation Center to Kenosha, Wisconsin, along Lake Michigan's North Shore. Operated by Metra, not Amtrak.", 55},
+	{"Union Pacific Northwest Line", "metra-up-nw", "Midwest",
+		"Metra commuter rail connecting Chicago's Ogilvie Transportation Center to Harvard, Illinois, via Des Plaines and Crystal Lake. Operated by Metra, not Amtrak.", 56},
+	{"Union Pacific West Line", "metra-up-w", "Midwest",
+		"Metra commuter rail connecting Chicago's Ogilvie Transportation Center to Elburn, Illinois, via Geneva and Elgin-area suburbs. Operated by Metra, not Amtrak.", 57},
+	{"Milwaukee District North Line", "metra-md-n", "Midwest",
+		"Metra commuter rail connecting Chicago Union Station to Fox Lake, Illinois, via Glenview and Libertyville. Operated by Metra, not Amtrak.", 58},
+	{"Milwaukee District West Line", "metra-md-w", "Midwest",
+		"Metra commuter rail connecting Chicago Union Station to Elgin, Illinois (with peak-period service extending to Big Timber Road). Operated by Metra, not Amtrak.", 59},
+	{"Rock Island Line", "metra-ri", "Midwest",
+		"Metra commuter rail connecting Chicago's LaSalle Street Station to Joliet, Illinois, with a branch to Blue Island via Beverly. Operated by Metra, not Amtrak.", 60},
+	{"Metra Electric Line", "metra-me", "Midwest",
+		"Metra commuter rail connecting Chicago's Millennium Station to University Park, Illinois, with branches to Blue Island and South Chicago. Operated by Metra, not Amtrak.", 61},
+	{"SouthWest Service", "metra-sws", "Midwest",
+		"Metra commuter rail connecting Chicago Union Station to Manhattan, Illinois, via Orland Park and Tinley Park. Operated by Metra, not Amtrak.", 62},
+	{"North Central Service", "metra-ncs", "Midwest",
+		"Metra commuter rail connecting Chicago Union Station to Antioch, Illinois, via O'Hare-area suburbs. Operated by Metra, not Amtrak.", 63},
+	{"Heritage Corridor", "metra-hc", "Midwest",
+		"Metra commuter rail connecting Chicago Union Station to Joliet, Illinois, via Summit and Lockport — weekday peak/reverse-peak service only. Operated by Metra, not Amtrak.", 64},
+	// 65 — NJ Transit rail, one consolidated corridor (not split per line
+	// like Metra): a live poll found no cross-line train-number collisions
+	// across NJT's 12 lines — see njtransit.go.
+	{"NJ Transit", "nj-transit", "Northeast",
+		"New Jersey Transit commuter rail — Atlantic City, Bergen County/Main, Gladstone Branch, Meadowlands, Montclair-Boonton, Morris & Essex, Northeast Corridor, North Jersey Coast, Pascack Valley, Port Jervis, Princeton Shuttle, and Raritan Valley lines. Operated by NJ Transit, not Amtrak.", 65},
 }
 
 // trainSeeds maps corridor index (0-based) → train numbers.
@@ -381,6 +424,22 @@ var trainSeeds = [][]string{
 	// 53 Caltrain South County Connector — sub-service, trains stay under
 	// corridor 47 (Caltrain).
 	{},
+	// 54–64 Metra, one corridor per line — full static-GTFS train rosters;
+	// see trains_metra.go for sourcing.
+	metraBNSFTrainNumbers,
+	metraUPNTrainNumbers,
+	metraUPNWTrainNumbers,
+	metraUPWTrainNumbers,
+	metraMDNTrainNumbers,
+	metraMDWTrainNumbers,
+	metraRITrainNumbers,
+	metraMETrainNumbers,
+	metraSWSTrainNumbers,
+	metraNCSTrainNumbers,
+	metraHCTrainNumbers,
+	// 65 NJ Transit — starter roster (static GTFS has no train-number field
+	// to derive a full roster from); see njTransitTrainNumbers in njtransit.go.
+	njTransitTrainNumbers,
 }
 
 // otpSeeds maps corridor ID (1-based) → on-time percent.
@@ -478,6 +537,42 @@ func seedDB(db *sql.DB, adminUsername, adminPassword string) error {
 	}
 	if err := seedCorridorStops(tx, "caltrain", caltrainStops); err != nil {
 		return fmt.Errorf("seed Caltrain stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-bnsf", metraBNSFStops); err != nil {
+		return fmt.Errorf("seed Metra BNSF stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-up-n", metraUPNStops); err != nil {
+		return fmt.Errorf("seed Metra UP-N stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-up-nw", metraUPNWStops); err != nil {
+		return fmt.Errorf("seed Metra UP-NW stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-up-w", metraUPWStops); err != nil {
+		return fmt.Errorf("seed Metra UP-W stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-md-n", metraMDNStops); err != nil {
+		return fmt.Errorf("seed Metra MD-N stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-md-w", metraMDWStops); err != nil {
+		return fmt.Errorf("seed Metra MD-W stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-ri", metraRIStops); err != nil {
+		return fmt.Errorf("seed Metra RI stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-me", metraMEStops); err != nil {
+		return fmt.Errorf("seed Metra ME stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-sws", metraSWSStops); err != nil {
+		return fmt.Errorf("seed Metra SWS stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-ncs", metraNCSStops); err != nil {
+		return fmt.Errorf("seed Metra NCS stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "metra-hc", metraHCStops); err != nil {
+		return fmt.Errorf("seed Metra HC stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "nj-transit", njTransitStops); err != nil {
+		return fmt.Errorf("seed NJ Transit stops: %w", err)
 	}
 
 	// 2. Seed trains

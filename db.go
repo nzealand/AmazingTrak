@@ -137,8 +137,17 @@ func runMigrations(db *sql.DB) error {
 		api_key TEXT NOT NULL DEFAULT '',
 		last_error TEXT NOT NULL DEFAULT '',
 		last_polled_at TEXT NOT NULL DEFAULT '',
-		updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		api_secret TEXT NOT NULL DEFAULT '',
+		cached_token TEXT NOT NULL DEFAULT ''
 	) STRICT, WITHOUT ROWID`)
+	// api_secret: a second credential field for a source needing a
+	// username+password pair instead of one static key (api_key holds the
+	// username). cached_token: a persisted upstream session token, so a
+	// source with a tight daily token-generation limit doesn't burn one on
+	// every restart. Both currently used only by NJ Transit — see njtransit.go.
+	db.Exec(`ALTER TABLE live_sources ADD COLUMN api_secret TEXT NOT NULL DEFAULT ''`)
+	db.Exec(`ALTER TABLE live_sources ADD COLUMN cached_token TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token)`)
 	// Case-insensitive username uniqueness, preserving the user's chosen display
@@ -600,6 +609,193 @@ func runMigrations(db *sql.DB) error {
 			}
 		}
 		markMigration(db, 17)
+	}
+
+	// Migration 18: register Metra as a live source — disabled by default,
+	// needs an API key (see metra.go). Unlike every other agency, one
+	// live_sources row covers all 11 Metra corridors added in migration 19,
+	// since live_sources is keyed by data provider, not by corridor.
+	if !migrationApplied(db, 18) {
+		if _, err := db.Exec(`INSERT OR IGNORE INTO live_sources (source_key, display_name, enabled, poll_seconds) VALUES ('metra','Metra',0,90)`); err != nil {
+			return err
+		}
+		markMigration(db, 18)
+	}
+
+	// Migration 19: add the 11 Metra line corridors to already-seeded
+	// (upgraded) databases — same fresh-install hazard and guard as
+	// migration 11/17 (see migration 5's comment); a fresh install instead
+	// gets these from corridorSeeds in seed.go. One corridor per line, not
+	// one shared "Metra" corridor, because train numbers are not unique
+	// across lines — see metra.go.
+	if !migrationApplied(db, 19) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			corridors := []struct{ name, slug, region, desc string }{
+				{"BNSF Line", "metra-bnsf", "Midwest",
+					"Metra commuter rail connecting Chicago Union Station to Aurora, Illinois, along the former Burlington Northern route. Operated by Metra, not Amtrak."},
+				{"Union Pacific North Line", "metra-up-n", "Midwest",
+					"Metra commuter rail connecting Chicago's Ogilvie Transportation Center to Kenosha, Wisconsin, along Lake Michigan's North Shore. Operated by Metra, not Amtrak."},
+				{"Union Pacific Northwest Line", "metra-up-nw", "Midwest",
+					"Metra commuter rail connecting Chicago's Ogilvie Transportation Center to Harvard, Illinois, via Des Plaines and Crystal Lake. Operated by Metra, not Amtrak."},
+				{"Union Pacific West Line", "metra-up-w", "Midwest",
+					"Metra commuter rail connecting Chicago's Ogilvie Transportation Center to Elburn, Illinois, via Geneva and Elgin-area suburbs. Operated by Metra, not Amtrak."},
+				{"Milwaukee District North Line", "metra-md-n", "Midwest",
+					"Metra commuter rail connecting Chicago Union Station to Fox Lake, Illinois, via Glenview and Libertyville. Operated by Metra, not Amtrak."},
+				{"Milwaukee District West Line", "metra-md-w", "Midwest",
+					"Metra commuter rail connecting Chicago Union Station to Elgin, Illinois (with peak-period service extending to Big Timber Road). Operated by Metra, not Amtrak."},
+				{"Rock Island Line", "metra-ri", "Midwest",
+					"Metra commuter rail connecting Chicago's LaSalle Street Station to Joliet, Illinois, with a branch to Blue Island via Beverly. Operated by Metra, not Amtrak."},
+				{"Metra Electric Line", "metra-me", "Midwest",
+					"Metra commuter rail connecting Chicago's Millennium Station to University Park, Illinois, with branches to Blue Island and South Chicago. Operated by Metra, not Amtrak."},
+				{"SouthWest Service", "metra-sws", "Midwest",
+					"Metra commuter rail connecting Chicago Union Station to Manhattan, Illinois, via Orland Park and Tinley Park. Operated by Metra, not Amtrak."},
+				{"North Central Service", "metra-ncs", "Midwest",
+					"Metra commuter rail connecting Chicago Union Station to Antioch, Illinois, via O'Hare-area suburbs. Operated by Metra, not Amtrak."},
+				{"Heritage Corridor", "metra-hc", "Midwest",
+					"Metra commuter rail connecting Chicago Union Station to Joliet, Illinois, via Summit and Lockport — weekday peak/reverse-peak service only. Operated by Metra, not Amtrak."},
+			}
+			for _, c := range corridors {
+				if _, err := db.Exec(`
+					INSERT INTO corridors (name, slug, region, description, sort_order)
+					SELECT ?, ?, ?, ?, COALESCE((SELECT MAX(sort_order) FROM corridors), 0) + 1
+					WHERE NOT EXISTS (SELECT 1 FROM corridors WHERE slug=?)`,
+					c.name, c.slug, c.region, c.desc, c.slug); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 19)
+	}
+
+	// Migration 20: seed the full static-GTFS train roster for all 11 Metra
+	// corridors on already-seeded (upgraded) databases — same idiom as
+	// migration 12/15. Data lives in trains_metra.go. No-op on a fresh
+	// install (migration 19 hasn't created these corridors there either —
+	// see its comment).
+	if !migrationApplied(db, 20) {
+		trainSets := []struct {
+			slug, prefix, label string
+			nums                []string
+		}{
+			{"metra-bnsf", "metra-bnsf", "BNSF", metraBNSFTrainNumbers},
+			{"metra-up-n", "metra-up-n", "UP-N", metraUPNTrainNumbers},
+			{"metra-up-nw", "metra-up-nw", "UP-NW", metraUPNWTrainNumbers},
+			{"metra-up-w", "metra-up-w", "UP-W", metraUPWTrainNumbers},
+			{"metra-md-n", "metra-md-n", "MD-N", metraMDNTrainNumbers},
+			{"metra-md-w", "metra-md-w", "MD-W", metraMDWTrainNumbers},
+			{"metra-ri", "metra-ri", "RI", metraRITrainNumbers},
+			{"metra-me", "metra-me", "ME", metraMETrainNumbers},
+			{"metra-sws", "metra-sws", "SWS", metraSWSTrainNumbers},
+			{"metra-ncs", "metra-ncs", "NCS", metraNCSTrainNumbers},
+			{"metra-hc", "metra-hc", "HC", metraHCTrainNumbers},
+		}
+		for _, ts := range trainSets {
+			for i, num := range ts.nums {
+				if _, err := db.Exec(`
+					INSERT OR IGNORE INTO trains (corridor_id, train_number, display_name, slug, sort_order)
+					SELECT id, ?, ?, ?, ? FROM corridors WHERE slug=?`,
+					num, ts.label+" "+num, ts.prefix+"-"+num, i+1, ts.slug); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 20)
+	}
+
+	// Migration 21: seed station lists for all 11 Metra corridors on
+	// already-seeded (upgraded) databases — same idiom as migration 13/16.
+	// Data lives in stations_metra.go.
+	if !migrationApplied(db, 21) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			stopSets := []struct {
+				slug  string
+				stops []stationSeed
+			}{
+				{"metra-bnsf", metraBNSFStops},
+				{"metra-up-n", metraUPNStops},
+				{"metra-up-nw", metraUPNWStops},
+				{"metra-up-w", metraUPWStops},
+				{"metra-md-n", metraMDNStops},
+				{"metra-md-w", metraMDWStops},
+				{"metra-ri", metraRIStops},
+				{"metra-me", metraMEStops},
+				{"metra-sws", metraSWSStops},
+				{"metra-ncs", metraNCSStops},
+				{"metra-hc", metraHCStops},
+			}
+			for _, ss := range stopSets {
+				if err := seedCorridorStops(db, ss.slug, ss.stops); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 21)
+	}
+
+	// Migration 22: register NJ Transit as a live source — disabled by
+	// default, needs a username+password pair rather than a single API key
+	// (api_key holds the username, api_secret the password — see
+	// njtransit.go's credentialPairSource).
+	if !migrationApplied(db, 22) {
+		if _, err := db.Exec(`INSERT OR IGNORE INTO live_sources (source_key, display_name, enabled, poll_seconds) VALUES ('njtransit','NJ Transit',0,90)`); err != nil {
+			return err
+		}
+		markMigration(db, 22)
+	}
+
+	// Migration 23: add the single consolidated "nj-transit" corridor to
+	// already-seeded (upgraded) databases — same fresh-install hazard and
+	// guard as migration 11/19 (see migration 5's comment); a fresh install
+	// instead gets this from corridorSeeds in seed.go.
+	if !migrationApplied(db, 23) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			if _, err := db.Exec(`
+				INSERT INTO corridors (name, slug, region, description, sort_order)
+				SELECT 'NJ Transit', 'nj-transit', 'Northeast',
+					'New Jersey Transit commuter rail — Atlantic City, Bergen County/Main, Gladstone Branch, Meadowlands, Montclair-Boonton, Morris & Essex, Northeast Corridor, North Jersey Coast, Pascack Valley, Port Jervis, Princeton Shuttle, and Raritan Valley lines. Operated by NJ Transit, not Amtrak.',
+					COALESCE((SELECT MAX(sort_order) FROM corridors), 0) + 1
+				WHERE NOT EXISTS (SELECT 1 FROM corridors WHERE slug='nj-transit')`); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 23)
+	}
+
+	// Migration 24: seed the NJ Transit starter train roster on
+	// already-seeded (upgraded) databases — same idiom as migration
+	// 12/15/20. Data lives in njTransitTrainNumbers (njtransit.go); unlike
+	// Metra this isn't a full published timetable, since NJT's static GTFS
+	// has no train-number field to derive one from — see that var's comment.
+	if !migrationApplied(db, 24) {
+		for i, num := range njTransitTrainNumbers {
+			if _, err := db.Exec(`
+				INSERT OR IGNORE INTO trains (corridor_id, train_number, display_name, slug, sort_order)
+				SELECT id, ?, ?, ?, ? FROM corridors WHERE slug='nj-transit'`,
+				num, "NJT "+num, "njt-"+num, i+1); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 24)
+	}
+
+	// Migration 25: seed the NJ Transit station list on already-seeded
+	// (upgraded) databases — same idiom as migration 13/16/21. Data lives
+	// in njTransitStops (stations_njtransit.go).
+	if !migrationApplied(db, 25) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			if err := seedCorridorStops(db, "nj-transit", njTransitStops); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 25)
 	}
 
 	return nil

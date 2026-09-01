@@ -1837,8 +1837,9 @@ func (app *App) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	type liveSourceView struct {
 		LiveSource
-		NeedsAPIKey bool
-		Description template.HTML
+		NeedsAPIKey         bool
+		NeedsCredentialPair bool
+		Description         template.HTML
 	}
 	liveSources := make([]liveSourceView, 0, len(liveSourceRows))
 	for _, row := range liveSourceRows {
@@ -1846,6 +1847,13 @@ func (app *App) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		if src := liveSourceByKey(row.Key); src != nil {
 			v.NeedsAPIKey = src.NeedsAPIKey()
 			v.Description = template.HTML(src.Description())
+			// credentialPairSource is an optional interface (see njtransit.go)
+			// implemented only by a source needing a username+password pair
+			// instead of a single API key — checked via assertion so ordinary
+			// single-key sources don't need a no-op method.
+			if cp, ok := src.(credentialPairSource); ok {
+				v.NeedsCredentialPair = cp.NeedsCredentialPair()
+			}
 		}
 		liveSources = append(liveSources, v)
 	}
@@ -2126,12 +2134,22 @@ func (app *App) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) 
 		pollSec, _ := strconv.Atoi(lastFormValue(r, "poll_seconds"))
 		pollSec = int(clampPollInterval(pollSec) / time.Second)
 		apiKey := strings.TrimSpace(r.FormValue("api_key"))
-		if enabled && src.NeedsAPIKey() && apiKey == "" {
+		apiSecret := strings.TrimSpace(r.FormValue("api_secret"))
+		needsPair := false
+		if cp, ok := src.(credentialPairSource); ok {
+			needsPair = cp.NeedsCredentialPair()
+		}
+		if enabled && needsPair && (apiKey == "" || apiSecret == "") {
+			setFlash(w, "This source needs a username and password before it can be enabled.")
+			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
+			return
+		}
+		if enabled && !needsPair && src.NeedsAPIKey() && apiKey == "" {
 			setFlash(w, "This source needs an API key before it can be enabled.")
 			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
 			return
 		}
-		if err := updateLiveSourceConfig(app.db, key, enabled, pollSec, apiKey); err != nil {
+		if err := updateLiveSourceConfig(app.db, key, enabled, pollSec, apiKey, apiSecret); err != nil {
 			setFlash(w, "Error saving live train settings: "+err.Error())
 			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
 			return
