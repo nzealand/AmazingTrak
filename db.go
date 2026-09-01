@@ -576,6 +576,28 @@ func runMigrations(db *sql.DB) error {
 		markMigration(db, 16)
 	}
 
+	// Migration 17: add the Caltrain South County Connector sub-corridor —
+	// same idiom as the pre-existing NEC Richmond/Roanoke/Springfield
+	// sub-corridors (see corridorSeeds in seed.go): its own descriptive
+	// page, but no trains parented here directly, since the actual trains
+	// (805-822) already live under the main "caltrain" corridor via
+	// migration 15. Same fresh-install hazard and guard as migration 5/8/11.
+	if !migrationApplied(db, 17) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			if _, err := db.Exec(`
+				INSERT INTO corridors (name, slug, region, description, sort_order)
+				SELECT 'Caltrain South County Connector', 'caltrain-south-county-connector', 'California',
+					'Peak-period weekday extension of Caltrain service south of Tamien into San Jose''s South County — Blossom Hill, Capitol, Morgan Hill, San Martin, and Gilroy. Uses the same San Francisco-Gilroy trains (805-822) as the main Caltrain schedule; not a separate operator.',
+					COALESCE((SELECT MAX(sort_order) FROM corridors), 0) + 1
+				WHERE NOT EXISTS (SELECT 1 FROM corridors WHERE slug='caltrain-south-county-connector')`); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 17)
+	}
+
 	return nil
 }
 

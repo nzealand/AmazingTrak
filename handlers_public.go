@@ -246,6 +246,40 @@ func (app *App) handleMap(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// stationAPIItem is one row of the public map's station-dots layer.
+type stationAPIItem struct {
+	Name         string  `json:"name"`
+	Slug         string  `json:"slug"`
+	Lat          float64 `json:"lat"`
+	Lon          float64 `json:"lon"`
+	CorridorName string  `json:"corridorName"`
+	CorridorSlug string  `json:"corridorSlug"`
+}
+
+func (app *App) handleStationsAPI(w http.ResponseWriter, r *http.Request) {
+	stops, err := allStops(app.db)
+	if err != nil {
+		http.Error(w, "Database error", 500)
+		return
+	}
+	out := make([]stationAPIItem, 0, len(stops))
+	for _, s := range stops {
+		out = append(out, stationAPIItem{
+			Name:         s.Name,
+			Slug:         s.Slug,
+			Lat:          s.Latitude.Float64,
+			Lon:          s.Longitude.Float64,
+			CorridorName: s.CorridorName,
+			CorridorSlug: s.CorridorSlug,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	// Station locations barely ever change; a long cache keeps this cheap
+	// even though the map fetches it on every page load.
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	json.NewEncoder(w).Encode(map[string]interface{}{"stations": out})
+}
+
 func (app *App) handleCorridors(w http.ResponseWriter, r *http.Request) {
 	corridors, err := allCorridors(app.db, true)
 	if err != nil {

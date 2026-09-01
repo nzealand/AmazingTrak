@@ -31,6 +31,11 @@ var nonAmtrakOperators = map[string]struct{ prefix, label string }{
 	"lirr":               {"lirr", "LIRR"},
 	"septa":              {"septa", "SEPTA"},
 	"brightline":         {"brightline", "Brightline"},
+	// The South County Connector normally carries no trains of its own (see
+	// corridor 53's comment) — this entry only matters if an admin ever adds
+	// a train directly under it, so it gets "Caltrain"-prefixed naming
+	// consistent with the parent corridor instead of the "amtrak-" default.
+	"caltrain-south-county-connector": {"caltrain", "Caltrain"},
 }
 
 // corridorSeeds must be ordered so that auto-increment IDs match data.sql references (1..44).
@@ -192,6 +197,12 @@ var corridorSeeds = []corridorSeed{
 		"Philadelphia-area commuter rail network operated by SEPTA across its Airport, Chestnut Hill East, Chestnut Hill West, Cynwyd, Fox Chase, Lansdale/Doylestown, Manayunk/Norristown, Media/Wawa, Paoli/Thorndale, Trenton, Warminster, West Trenton, and Wilmington/Newark lines. Not Amtrak.", 51},
 	{"Brightline", "brightline", "Florida",
 		"Higher-speed intercity rail connecting Miami, Fort Lauderdale, Boca Raton, West Palm Beach, and Orlando. Privately operated by Brightline Trains Florida, not Amtrak.", 52},
+	// 53 — sub-service of Caltrain (corridor 47), same idiom as the NEC
+	// Richmond/Roanoke/Springfield sub-corridors above: its own page, but no
+	// trains parented here directly — the actual trains (805-822) live under
+	// the main Caltrain corridor.
+	{"Caltrain South County Connector", "caltrain-south-county-connector", "California",
+		"Peak-period weekday extension of Caltrain service south of Tamien into San Jose's South County — Blossom Hill, Capitol, Morgan Hill, San Martin, and Gilroy. Uses the same San Francisco-Gilroy trains (805-822) as the main Caltrain schedule; not a separate operator.", 53},
 }
 
 // trainSeeds maps corridor index (0-based) → train numbers.
@@ -367,6 +378,9 @@ var trainSeeds = [][]string{
 	// 52 Brightline — full weekday+weekend timetable; see
 	// trains_mbta_lirr_septa_brightline.go for sourcing.
 	brightlineTrainNumbers,
+	// 53 Caltrain South County Connector — sub-service, trains stay under
+	// corridor 47 (Caltrain).
+	{},
 }
 
 // otpSeeds maps corridor ID (1-based) → on-time percent.

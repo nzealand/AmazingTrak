@@ -794,6 +794,7 @@ func main() {
 	mux.HandleFunc("GET /api/live-trains/{slug}", app.handleLiveTrain)
 	mux.HandleFunc("GET /api/trains/{slug}/stops", app.handleTrainStopsAPI)
 	mux.HandleFunc("GET /api/vantage-spots", app.handleVantageSpotsAPI)
+	mux.HandleFunc("GET /api/stations", app.handleStationsAPI)
 	mux.HandleFunc("GET /vantage-spots/suggest", app.handleVantageSpotForm)
 	mux.HandleFunc("POST /vantage-spots/suggest", app.handleVantageSpotSubmit)
 	mux.HandleFunc("GET /routes", app.handleCorridors)

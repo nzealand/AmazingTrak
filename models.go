@@ -788,6 +788,33 @@ func scanMedia(rows *sql.Rows) ([]Media, error) {
 
 // ----- Stop queries -----
 
+// allStops returns every stop across every corridor that has coordinates
+// (some Amtrak stops predate migrateStopCoordinates finding a match and are
+// still NULL — those can't be plotted, so they're excluded here rather than
+// left for the caller to filter). Used by the public map's station-dots
+// layer, not by any per-corridor page (those use stopsByCorridorID).
+func allStops(db *sql.DB) ([]Stop, error) {
+	rows, err := db.Query(`SELECT s.id, s.corridor_id, s.name, COALESCE(s.station_code,''), COALESCE(s.slug,''),
+		s.latitude, s.longitude, s.sort_order, c.name, c.slug
+		FROM stops s JOIN corridors c ON c.id=s.corridor_id
+		WHERE s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+		ORDER BY c.sort_order, s.sort_order`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Stop
+	for rows.Next() {
+		var s Stop
+		if err := rows.Scan(&s.ID, &s.CorridorID, &s.Name, &s.StationCode, &s.Slug,
+			&s.Latitude, &s.Longitude, &s.SortOrder, &s.CorridorName, &s.CorridorSlug); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func stopsByCorridorID(db *sql.DB, corridorID int64) ([]Stop, error) {
 	rows, err := db.Query(`SELECT s.id, s.corridor_id, s.name, COALESCE(s.station_code,''), COALESCE(s.slug,''),
 		s.latitude, s.longitude, s.sort_order, c.name, c.slug

@@ -234,9 +234,11 @@ function findCorridorSlug(name) {
   var routeLayer = L.layerGroup();
   var trainLayer = L.layerGroup();
   var vantageLayer = L.layerGroup();
+  var stationLayer = L.layerGroup();
   if (layerOn('Route lines')) routeLayer.addTo(map);
   if (layerOn('Live trains')) trainLayer.addTo(map);
   if (layerOn('Vantage spots')) vantageLayer.addTo(map);
+  if (layerOn('Train stations')) stationLayer.addTo(map);
 
   var loading = document.getElementById('map-loading');
 
@@ -309,7 +311,7 @@ function findCorridorSlug(name) {
     return d.innerHTML;
   }
 
-  var overlays = { 'Route lines': routeLayer };
+  var overlays = { 'Route lines': routeLayer, 'Train stations': stationLayer };
   if (LIVE_TRAINS_ENABLED) overlays['Live trains'] = trainLayer;
   overlays['Vantage spots'] = vantageLayer;
   L.control.layers(null, overlays, { collapsed: false, position: 'topright' }).addTo(map);
@@ -442,6 +444,29 @@ function findCorridorSlug(name) {
       });
     })
     .catch(function(err) { console.error('Vantage spots error:', err); });
+
+  // ---- Train stations (every stop with known coordinates, on by default) ----
+  fetch('/api/stations')
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data) {
+      (data.stations || []).forEach(function(s) {
+        var popup = '<strong style="font-size:.9rem">' + esc(s.name) + '</strong>';
+        if (s.corridorSlug) {
+          popup += '<br><a href="/routes/' + s.corridorSlug + '" style="font-size:.82rem">' + esc(s.corridorName) + '</a>';
+        }
+        if (s.slug) {
+          popup += '<br><a href="/stations/' + s.slug + '" style="font-size:.82rem">Station details →</a>';
+        }
+        L.circleMarker([s.lat, s.lon], {
+          radius: 5,
+          color: '#1a1a2e',
+          weight: 1.5,
+          fillColor: '#fff',
+          fillOpacity: 1
+        }).bindPopup(popup).addTo(stationLayer);
+      });
+    })
+    .catch(function(err) { console.error('Stations error:', err); });
 
   // ---- Live train positions (only when enabled in admin settings) ----
   if (!LIVE_TRAINS_ENABLED) return;
