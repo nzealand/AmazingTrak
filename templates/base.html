@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="{{siteName}} — Independent passenger rail tracker. {{siteName}} is not affiliated with, sponsored by, or endorsed by Amtrak. AMTRAK and related service names are trademarks of their respective owners.">
+<!--
+  {{siteName}} — Independent passenger rail tracker &copy; {{year}}
+  {{siteName}} is not affiliated with, sponsored by, or endorsed by Amtrak.
+  AMTRAK and related service names are trademarks of their respective owners.
+-->
 <title>{{block "title" .}}{{siteName}}{{end}}</title>
 <link rel="stylesheet" href="/static/style.css?v={{staticVer}}">
 {{if faviconURL}}<link rel="icon" href="{{faviconURL}}">{{end}}
@@ -43,16 +49,6 @@
 <main>
 {{block "content" .}}{{end}}
 </main>
-<footer>
-  <div class="container">
-    {{siteName}} — Independent passenger rail tracker &copy; {{year}}
-    <br>
-    <small>
-      {{siteName}} is not affiliated with, sponsored by, or endorsed by Amtrak.
-      AMTRAK and related service names are trademarks of their respective owners.
-    </small>
-  </div>
-</footer>
 </body>
 </html>
 {{end}}
