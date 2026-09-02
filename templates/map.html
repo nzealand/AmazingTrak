@@ -42,19 +42,13 @@
 </style>
 {{end}}
 {{define "content"}}
-<p class="independence-notice" style="padding:.4rem 1rem 0;font-size:.75rem;color:var(--muted)">
-  Independent railfan information. Not affiliated with or endorsed by Amtrak.
-</p>
 <div id="map-wrap">
   <div id="amtrak-map"></div>
   <div id="map-loading">Loading route map…</div>
 </div>
 <div style="padding:.4rem 1rem;font-size:.75rem;color:var(--muted);border-top:1px solid var(--border);display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
   <span>
-    Route data from <a href="https://data-usdot.opendata.arcgis.com/datasets/usdot::amtrak-routes" target="_blank" rel="noopener" style="color:var(--muted)">USDOT NTAD</a>. Click a route for details.
-    {{if .Data.LiveTrains}}
-    Live positions from <a href="https://amtraker.com/" target="_blank" rel="noopener" style="color:var(--muted)">Amtraker</a>, refreshed every 90s and approximate — not affiliated with Amtrak.
-    {{end}}
+    Independent railfan information. Train positions refreshed every 90s and approximate.
   </span>
   {{if .Data.LiveTrains}}
   <span style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
