@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -64,9 +66,19 @@ type amtrakerTrain struct {
 // liveTrain is what we hand to the map. Every one of these corresponds to a
 // train in our own DB, so TrainSlug always links somewhere real.
 type liveTrain struct {
-	TrainNum     string  `json:"trainNum"`
-	DisplayName  string  `json:"displayName"`
-	TrainSlug    string  `json:"trainSlug"`
+	TrainNum    string `json:"trainNum"`
+	DisplayName string `json:"displayName"`
+	TrainSlug   string `json:"trainSlug"`
+	// RunKey identifies this specific physical run for map/client purposes.
+	// Equal to TrainSlug except in the rare case where a source reports more
+	// than one active train sharing the same number/slug at once — a
+	// long-distance Amtrak train (e.g. the Empire Builder) takes over a day
+	// to complete its trip but departs daily, so two physical trains
+	// numbered the same can be on the rails simultaneously. Without a
+	// distinct key, both would collide on one map marker and whichever the
+	// client happened to see last would silently win. assignRunKeys fills
+	// this in as slug, slug-run2, slug-run3, ... for each such group.
+	RunKey       string  `json:"runKey"`
 	CorridorName string  `json:"corridorName"`
 	CorridorSlug string  `json:"corridorSlug"`
 	Lat          float64 `json:"lat"`
@@ -298,7 +310,18 @@ func fetchLiveTrains(app *App) ([]liveTrain, error) {
 		return nil, err
 	}
 
-	var out []liveTrain
+	// A long-distance train's trip can take over a day, but it departs daily —
+	// so two physical trains sharing the same number are sometimes active at
+	// once (see the RunKey doc comment). When that happens for a matched
+	// slug, order the more-progressed run (more stations already departed,
+	// i.e. it left earlier) first, so assignRunKeys' plain, unsuffixed slug
+	// consistently lands on the same physical run poll to poll instead of
+	// flip-flopping between the two.
+	type liveTrainCand struct {
+		lt       liveTrain
+		departed int
+	}
+	var cands []liveTrainCand
 	for _, runs := range raw {
 		for _, lt := range runs {
 			// Predeparture trains report their origin station's coordinates,
@@ -314,7 +337,13 @@ func fetchLiveTrains(app *App) ([]liveTrain, error) {
 				continue
 			}
 			prog := stationsInfo(lt)
-			out = append(out, liveTrain{
+			departed := 0
+			for _, st := range lt.Stations {
+				if st.Status == "Departed" {
+					departed++
+				}
+			}
+			cands = append(cands, liveTrainCand{departed: departed, lt: liveTrain{
 				TrainNum:         lt.TrainNum,
 				DisplayName:      match.DisplayName,
 				TrainSlug:        match.Slug,
@@ -334,8 +363,18 @@ func fetchLiveTrains(app *App) ([]liveTrain, error) {
 				CurrentDeparture: prog.currentDeparture,
 				LastUpdated:      lt.LastValTS,
 				HasDelayInfo:     true,
-			})
+			}})
 		}
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].lt.TrainSlug != cands[j].lt.TrainSlug {
+			return false
+		}
+		return cands[i].departed > cands[j].departed
+	})
+	out := make([]liveTrain, len(cands))
+	for i, c := range cands {
+		out[i] = c.lt
 	}
 	return out, nil
 }
@@ -451,6 +490,31 @@ func (app *App) findLiveTrain(slug string) *liveTrain {
 	return nil
 }
 
+// findLiveTrainByRunKey is findLiveTrain's counterpart for the map's
+// per-train poll (handleLiveTrain): matched by RunKey, not TrainSlug, so it
+// can resolve one specific physical run when a train has more than one
+// active at once (see the RunKey doc comment on liveTrain). Page-level
+// lookups (train detail/listing) intentionally keep using findLiveTrain by
+// TrainSlug instead — they only ever know the DB slug, not a run key.
+func (app *App) findLiveTrainByRunKey(runKey string) *liveTrain {
+	for _, src := range registeredLiveSources {
+		cache, ok := app.liveTrainCaches[src.Key()]
+		if !ok {
+			continue
+		}
+		snap, ok := cache.load()
+		if !ok {
+			continue
+		}
+		for i, t := range snap.Trains {
+			if t.RunKey == runKey {
+				return &snap.Trains[i]
+			}
+		}
+	}
+	return nil
+}
+
 // mergedLiveSnapshot combines every source's current cache into one snapshot
 // for the map. UpdatedAt is the oldest of the contributing sources' update
 // times, so a client checking freshness isn't misled by one very fresh
@@ -519,6 +583,24 @@ func clampPollInterval(seconds int) time.Duration {
 	return d
 }
 
+// assignRunKeys fills in RunKey for one source's poll of trains, equal to
+// TrainSlug except for the rare case where the same slug appears more than
+// once — see the RunKey doc comment on liveTrain. Applied uniformly to every
+// source here (rather than in each source's Fetch) so the map's marker
+// keying can rely on RunKey always being populated regardless of source.
+func assignRunKeys(trains []liveTrain) {
+	seen := map[string]int{}
+	for i := range trains {
+		slug := trains[i].TrainSlug
+		seen[slug]++
+		if seen[slug] == 1 {
+			trains[i].RunKey = slug
+		} else {
+			trains[i].RunKey = fmt.Sprintf("%s-run%d", slug, seen[slug])
+		}
+	}
+}
+
 // pollLiveSource refreshes one source's cache for as long as it's enabled,
 // re-checking its configured interval after every poll so an admin's change
 // on the Settings page takes effect from the next cycle. Polling is skipped
@@ -537,6 +619,7 @@ func (app *App) pollLiveSource(src liveSource) {
 			// Keep serving the last good snapshot until it ages out.
 			return
 		}
+		assignRunKeys(trains)
 		cache.store(trains)
 	}
 
@@ -571,13 +654,15 @@ func (app *App) handleLiveTrains(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(snap)
 }
 
-// handleLiveTrain serves the cached data for one train, matched by slug, so a
-// client that only cares about a single selected train doesn't need to
+// handleLiveTrain serves the cached data for one train run, matched by
+// RunKey (see liveTrain's doc comment — usually just the train's slug, but
+// disambiguated when more than one physical run shares a number), so a
+// client that only cares about a single selected marker doesn't need to
 // re-fetch and re-diff the whole snapshot every poll. Returns 404 for no
-// source enabled, a stale cache, or a train not currently running — the
-// client doesn't need to distinguish those cases.
+// source enabled, a stale cache, or a run not currently active — the client
+// doesn't need to distinguish those cases.
 func (app *App) handleLiveTrain(w http.ResponseWriter, r *http.Request) {
-	t := app.findLiveTrain(r.PathValue("slug"))
+	t := app.findLiveTrainByRunKey(r.PathValue("slug"))
 	if t == nil {
 		http.NotFound(w, r)
 		return

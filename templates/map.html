@@ -573,12 +573,19 @@ function findCorridorSlug(name) {
   // Regenerated fresh each time a popup is opened, so the speed/heading/ETA
   // shown always reflects the current guess rather than whatever was true
   // at the last poll.
-  function trainPopup(slug) {
-    var st = trainState[slug];
+  function trainPopup(runKey) {
+    var st = trainState[runKey];
     if (!st) return '';
     var t = st.t;
     var veryLate = t.delayMin > 60;
     var html = '<strong style="font-size:.9rem">' + esc(t.displayName) + (veryLate ? ' 💀' : '') + '</strong>';
+    // A long-distance train's trip can span more than a day, so a second
+    // physical run of the same number is sometimes still finishing its own
+    // trip while today's has already departed — runKey != trainSlug flags
+    // which marker that is, so it doesn't look like a duplicate glitch.
+    if (t.runKey !== t.trainSlug) {
+      html += '<br><span style="font-size:.72rem;color:var(--muted)">Another active run of this train is also on the map</span>';
+    }
     if (t.corridorName) html += '<br><span style="font-size:.8rem">' + esc(t.corridorName) + '</span>';
     if (t.hasDelayInfo) {
       html += '<br><span style="font-size:.8rem;color:' + (veryLate ? '#000' : STATUS_COLOR[t.status]) + '">' +
@@ -626,7 +633,11 @@ function findCorridorSlug(name) {
   function markerIcon(t) {
     var veryLate = t.delayMin > 60;
     var bg = veryLate ? '#000' : (STATUS_COLOR[t.status] || '#457b9d');
-    var label = veryLate ? '💀 ' + esc(String(t.trainNum)) : esc(String(t.trainNum));
+    // A second active run of the same numbered train (see trainPopup) gets a
+    // prime mark on its marker label so two dots reading e.g. "8" and "8′"
+    // don't look like a rendering glitch.
+    var numLabel = esc(String(t.trainNum)) + (t.runKey !== t.trainSlug ? '′' : '');
+    var label = veryLate ? '💀 ' + numLabel : numLabel;
     return L.divIcon({
       className: '',
       html: '<div class="train-num-marker" style="background:' + bg + '">' + label + '</div>',
@@ -640,7 +651,12 @@ function findCorridorSlug(name) {
   // whichever marker's popup is currently open, so both stay in sync with
   // the same physics (dead reckoning, segment speed) and never drift apart.
   function applyLiveTrain(t, now) {
-    var prev = trainState[t.trainSlug];
+    // Keyed by runKey, not trainSlug: a long-distance train (e.g. the Empire
+    // Builder) can have two physical runs sharing one number/slug active at
+    // once, since its trip takes over a day but it departs daily. runKey
+    // disambiguates those so both get their own marker instead of one
+    // silently overwriting the other.
+    var prev = trainState[t.runKey];
     var fixTime = t.lastUpdated ? new Date(t.lastUpdated).getTime() : NaN;
     if (isNaN(fixTime)) fixTime = now;
     var fixPoint = [t.lat, t.lon];
@@ -666,7 +682,7 @@ function findCorridorSlug(name) {
         var heading = COMPASS_DEG[t.heading];
         forward = (heading == null || angleDiff(heading, localBearing) <= 90) ? 1 : -1;
 
-        var bounds = stopArcBounds(line, stopCache[t.trainSlug], arcLen, forward);
+        var bounds = stopArcBounds(line, stopCache[t.trainSlug], arcLen, forward); // shared schedule, keyed by real slug
         if (bounds) { prevArc = bounds.prevArc; nextArc = bounds.nextArc; }
       }
     }
@@ -688,16 +704,16 @@ function findCorridorSlug(name) {
     var marker = prev && prev.marker;
     if (!marker) {
       marker = L.marker(fixPoint, { icon: markerIcon(t) });
-      marker.bindPopup(function() { return trainPopup(t.trainSlug); });
+      marker.bindPopup(function() { return trainPopup(t.runKey); });
       // Poll just this train, on the same cadence as the batch refresh,
       // for as long as its popup stays open — cheaper and fresher than
       // waiting on the next full-snapshot poll to update what's on screen.
       marker.on('popupopen', function() {
-        selectedSlug = t.trainSlug;
+        selectedSlug = t.runKey;
         pollSelectedTrain();
       });
       marker.on('popupclose', function() {
-        if (selectedSlug === t.trainSlug) selectedSlug = null;
+        if (selectedSlug === t.runKey) selectedSlug = null;
       });
       marker.addTo(trainLayer);
     } else {
@@ -705,7 +721,7 @@ function findCorridorSlug(name) {
       marker.setLatLng(fixPoint);
     }
 
-    trainState[t.trainSlug] = {
+    trainState[t.runKey] = {
       t: t, marker: marker, line: line, lineTotal: lineTotal, arcLen: arcLen,
       forward: forward, speedMps: speedMps, fixTime: fixTime, fixPoint: fixPoint,
       guessing: false, prevArc: prevArc, nextArc: nextArc, etaElapsedSec: etaElapsedSec,
@@ -714,7 +730,7 @@ function findCorridorSlug(name) {
 
     // Keep an already-open popup's content current rather than waiting for
     // the viewer to close and reopen it.
-    if (marker.isPopupOpen()) marker.setPopupContent(trainPopup(t.trainSlug));
+    if (marker.isPopupOpen()) marker.setPopupContent(trainPopup(t.runKey));
   }
 
   function refreshTrains() {
@@ -729,7 +745,7 @@ function findCorridorSlug(name) {
         var now = Date.now();
 
         trains.forEach(function(t) {
-          seen[t.trainSlug] = true;
+          seen[t.runKey] = true;
           applyLiveTrain(t, now);
         });
 
@@ -752,7 +768,7 @@ function findCorridorSlug(name) {
       });
   }
 
-  // trainSlug of whichever marker's popup is currently open, or null.
+  // runKey of whichever marker's popup is currently open, or null.
   var selectedSlug = null;
 
   function pollSelectedTrain() {
