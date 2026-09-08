@@ -918,6 +918,104 @@ func runMigrations(db *sql.DB) error {
 		markMigration(db, 33)
 	}
 
+	// Migration 34: add VIA Rail's 7 remote/long-distance service corridors
+	// to already-seeded (upgraded) databases — same fresh-install hazard and
+	// guard as migration 19/27 (see migration 5's comment); a fresh install
+	// instead gets these from corridorSeeds in seed.go. One corridor per
+	// named service, not merged into "via-rail-corridor" — see
+	// trains_via_remote.go. No new live_sources row needed: the existing
+	// 'via-rail' source (migration 30) now matches against all 8 VIA
+	// corridors, same "one provider, many corridors" idiom as Metra.
+	if !migrationApplied(db, 34) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			corridors := []struct{ name, slug, region, desc string }{
+				{"VIA Rail — The Canadian", "via-the-canadian", "Canada",
+					"VIA Rail's transcontinental service between Toronto and Vancouver via Winnipeg, Saskatoon, Edmonton, and Jasper — roughly 4 days end to end, running about 2-3x/week. Operated by VIA Rail, not Amtrak."},
+				{"VIA Rail — The Ocean", "via-the-ocean", "Canada",
+					"VIA Rail's overnight service between Montreal and Halifax via Quebec's Gaspé region and New Brunswick. Operated by VIA Rail, not Amtrak."},
+				{"VIA Rail — Winnipeg-Churchill", "via-winnipeg-churchill", "Canada",
+					"VIA Rail's remote northern service connecting Winnipeg to Churchill, Manitoba (on Hudson Bay) via The Pas — one of the only ways to reach Churchill other than by air. Operated by VIA Rail, not Amtrak."},
+				{"VIA Rail — Sudbury-White River", "via-sudbury-white-river", "Canada",
+					"VIA Rail's remote regional service connecting Sudbury to White River, Ontario, serving small communities with no road access. Operated by VIA Rail, not Amtrak."},
+				{"VIA Rail — Jasper-Prince Rupert", "via-jasper-prince-rupert", "Canada",
+					"VIA Rail's Skeena service connecting Jasper, Alberta to Prince Rupert, British Columbia through the Rockies and the Skeena River valley. Operated by VIA Rail, not Amtrak."},
+				{"VIA Rail — Montreal-Jonquière", "via-montreal-jonquiere", "Canada",
+					"VIA Rail's Saguenay service connecting Montreal to Jonquière, Quebec. Operated by VIA Rail, not Amtrak."},
+				{"VIA Rail — Montreal-Senneterre", "via-montreal-senneterre", "Canada",
+					"VIA Rail's Abitibi service connecting Montreal to Senneterre, Quebec. Operated by VIA Rail, not Amtrak."},
+			}
+			for _, c := range corridors {
+				if _, err := db.Exec(`
+					INSERT INTO corridors (name, slug, region, description, sort_order)
+					SELECT ?, ?, ?, ?, COALESCE((SELECT MAX(sort_order) FROM corridors), 0) + 1
+					WHERE NOT EXISTS (SELECT 1 FROM corridors WHERE slug=?)`,
+					c.name, c.slug, c.region, c.desc, c.slug); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 34)
+	}
+
+	// Migration 35: seed the full static-GTFS train rosters for VIA Rail's 7
+	// remote/long-distance corridors on already-seeded (upgraded) databases
+	// — same idiom as migration 20/28. Data lives in trains_via_remote.go.
+	if !migrationApplied(db, 35) {
+		trainSets := []struct {
+			slug string
+			nums []string
+		}{
+			{"via-the-canadian", viaCanadianTrainNumbers},
+			{"via-the-ocean", viaOceanTrainNumbers},
+			{"via-winnipeg-churchill", viaWinnipegChurchillTrainNumbers},
+			{"via-sudbury-white-river", viaSudburyWhiteRiverTrainNumbers},
+			{"via-jasper-prince-rupert", viaJasperPrinceRupertTrainNumbers},
+			{"via-montreal-jonquiere", viaMontrealJonquiereTrainNumbers},
+			{"via-montreal-senneterre", viaMontrealSenneterreTrainNumbers},
+		}
+		for _, ts := range trainSets {
+			for i, num := range ts.nums {
+				if _, err := db.Exec(`
+					INSERT OR IGNORE INTO trains (corridor_id, train_number, display_name, slug, sort_order)
+					SELECT id, ?, ?, ?, ? FROM corridors WHERE slug=?`,
+					num, "VIA "+num, "via-"+num, i+1, ts.slug); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 35)
+	}
+
+	// Migration 36: seed station lists for VIA Rail's 7 remote/long-distance
+	// corridors on already-seeded (upgraded) databases — same idiom as
+	// migration 21/29. Data lives in stations_via_remote.go.
+	if !migrationApplied(db, 36) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			stopSets := []struct {
+				slug  string
+				stops []stationSeed
+			}{
+				{"via-the-canadian", viaCanadianStops},
+				{"via-the-ocean", viaOceanStops},
+				{"via-winnipeg-churchill", viaWinnipegChurchillStops},
+				{"via-sudbury-white-river", viaSudburyWhiteRiverStops},
+				{"via-jasper-prince-rupert", viaJasperPrinceRupertStops},
+				{"via-montreal-jonquiere", viaMontrealJonquiereStops},
+				{"via-montreal-senneterre", viaMontrealSenneterreStops},
+			}
+			for _, ss := range stopSets {
+				if err := seedCorridorStops(db, ss.slug, ss.stops); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 36)
+	}
+
 	return nil
 }
 

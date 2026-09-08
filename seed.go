@@ -50,6 +50,13 @@ var nonAmtrakOperators = map[string]struct{ prefix, label string }{
 	"nj-transit":                      {"njt", "NJT"},
 	"la-metrolink":                    {"metrolink", "Metrolink"},
 	"via-rail-corridor":               {"via", "VIA"},
+	"via-the-canadian":                {"via", "VIA"},
+	"via-the-ocean":                   {"via", "VIA"},
+	"via-winnipeg-churchill":          {"via", "VIA"},
+	"via-sudbury-white-river":         {"via", "VIA"},
+	"via-jasper-prince-rupert":        {"via", "VIA"},
+	"via-montreal-jonquiere":          {"via", "VIA"},
+	"via-montreal-senneterre":         {"via", "VIA"},
 }
 
 // corridorSeeds must be ordered so that auto-increment IDs match data.sql references (1..44).
@@ -257,7 +264,25 @@ var corridorSeeds = []corridorSeed{
 	// Corridor only, not VIA's full national network — see
 	// stations_via.go/trains_via.go for why.
 	{"VIA Rail Corridor", "via-rail-corridor", "Canada",
-		"VIA Rail's Quebec City-Windsor Corridor — Toronto, Ottawa, Montreal, Quebec City, Windsor, London, and Niagara Falls area service. Canada's busiest passenger rail corridor. Operated by VIA Rail, not Amtrak. VIA's remote long-distance services (The Canadian, the Ocean, etc.) aren't tracked here.", 67},
+		"VIA Rail's Quebec City-Windsor Corridor — Toronto, Ottawa, Montreal, Quebec City, Windsor, London, and Niagara Falls area service. Canada's busiest passenger rail corridor. Operated by VIA Rail, not Amtrak. See the corridors below for VIA's remote/long-distance services.", 67},
+	// 68-74 — VIA Rail's remote/long-distance services, one corridor per
+	// named service (not merged into VIA Rail Corridor above), matching the
+	// same idiom already used for Amtrak's own long-distance trains
+	// elsewhere in this list — see trains_via_remote.go.
+	{"VIA Rail — The Canadian", "via-the-canadian", "Canada",
+		"VIA Rail's transcontinental service between Toronto and Vancouver via Winnipeg, Saskatoon, Edmonton, and Jasper — roughly 4 days end to end, running about 2-3x/week. Operated by VIA Rail, not Amtrak.", 68},
+	{"VIA Rail — The Ocean", "via-the-ocean", "Canada",
+		"VIA Rail's overnight service between Montreal and Halifax via Quebec's Gaspé region and New Brunswick. Operated by VIA Rail, not Amtrak.", 69},
+	{"VIA Rail — Winnipeg-Churchill", "via-winnipeg-churchill", "Canada",
+		"VIA Rail's remote northern service connecting Winnipeg to Churchill, Manitoba (on Hudson Bay) via The Pas — one of the only ways to reach Churchill other than by air. Operated by VIA Rail, not Amtrak.", 70},
+	{"VIA Rail — Sudbury-White River", "via-sudbury-white-river", "Canada",
+		"VIA Rail's remote regional service connecting Sudbury to White River, Ontario, serving small communities with no road access. Operated by VIA Rail, not Amtrak.", 71},
+	{"VIA Rail — Jasper-Prince Rupert", "via-jasper-prince-rupert", "Canada",
+		"VIA Rail's Skeena service connecting Jasper, Alberta to Prince Rupert, British Columbia through the Rockies and the Skeena River valley. Operated by VIA Rail, not Amtrak.", 72},
+	{"VIA Rail — Montreal-Jonquière", "via-montreal-jonquiere", "Canada",
+		"VIA Rail's Saguenay service connecting Montreal to Jonquière, Quebec. Operated by VIA Rail, not Amtrak.", 73},
+	{"VIA Rail — Montreal-Senneterre", "via-montreal-senneterre", "Canada",
+		"VIA Rail's Abitibi service connecting Montreal to Senneterre, Quebec. Operated by VIA Rail, not Amtrak.", 74},
 }
 
 // trainSeeds maps corridor index (0-based) → train numbers.
@@ -458,6 +483,15 @@ var trainSeeds = [][]string{
 	// 67 VIA Rail Corridor — full static-GTFS roster for the Corridor only;
 	// see trains_via.go for sourcing and scope.
 	viaCorridorTrainNumbers,
+	// 68-74 VIA Rail remote/long-distance services — full static-GTFS
+	// rosters; see trains_via_remote.go for sourcing.
+	viaCanadianTrainNumbers,
+	viaOceanTrainNumbers,
+	viaWinnipegChurchillTrainNumbers,
+	viaSudburyWhiteRiverTrainNumbers,
+	viaJasperPrinceRupertTrainNumbers,
+	viaMontrealJonquiereTrainNumbers,
+	viaMontrealSenneterreTrainNumbers,
 }
 
 // otpSeeds maps corridor ID (1-based) → on-time percent.
@@ -597,6 +631,27 @@ func seedDB(db *sql.DB, adminUsername, adminPassword string) error {
 	}
 	if err := seedCorridorStops(tx, "via-rail-corridor", viaCorridorStops); err != nil {
 		return fmt.Errorf("seed VIA Rail Corridor stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "via-the-canadian", viaCanadianStops); err != nil {
+		return fmt.Errorf("seed VIA The Canadian stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "via-the-ocean", viaOceanStops); err != nil {
+		return fmt.Errorf("seed VIA The Ocean stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "via-winnipeg-churchill", viaWinnipegChurchillStops); err != nil {
+		return fmt.Errorf("seed VIA Winnipeg-Churchill stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "via-sudbury-white-river", viaSudburyWhiteRiverStops); err != nil {
+		return fmt.Errorf("seed VIA Sudbury-White River stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "via-jasper-prince-rupert", viaJasperPrinceRupertStops); err != nil {
+		return fmt.Errorf("seed VIA Jasper-Prince Rupert stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "via-montreal-jonquiere", viaMontrealJonquiereStops); err != nil {
+		return fmt.Errorf("seed VIA Montreal-Jonquière stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "via-montreal-senneterre", viaMontrealSenneterreStops); err != nil {
+		return fmt.Errorf("seed VIA Montreal-Senneterre stops: %w", err)
 	}
 
 	// 2. Seed trains

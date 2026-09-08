@@ -2,13 +2,12 @@ package main
 
 // viaCorridorStops is the station list for the "VIA Rail Corridor" corridor —
 // the Quebec City-Windsor Corridor (Toronto/Ottawa/Montreal/Quebec City
-// area), which carries nearly all of VIA Rail's current train traffic.
-// VIA's remaining long-distance/remote services (The Canadian:
-// Toronto-Vancouver, the Ocean: Montreal-Halifax, Winnipeg-Churchill,
-// Sudbury-White River, Jasper-Prince Rupert, Montreal-Jonquière/Senneterre)
-// are deliberately out of scope — they run only 1-3x/week each and would add
-// far more (often tiny, flag-stop) stations for proportionally little
-// live-tracking value. Sourced from VIA Rail's own published static GTFS
+// area), which carries nearly all of VIA Rail's current train traffic. VIA's
+// remaining long-distance/remote services (The Canadian, the Ocean,
+// Winnipeg-Churchill, Sudbury-White River, Jasper-Prince Rupert,
+// Montreal-Jonquière, Montreal-Senneterre) are each their own corridor
+// instead — see trains_via_remote.go/stations_via_remote.go. Sourced from
+// VIA Rail's own published static GTFS
 // (https://viarail.ca/sites/all/files/gtfs/viarail.zip, Open Government
 // Licence – Canada v2, confirmed empirically 2026-09-08): every stop_id
 // reached by a trip on one of the 9 route_ids that make up the Corridor

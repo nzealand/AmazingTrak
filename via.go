@@ -21,10 +21,14 @@ import (
 // app identifies itself via User-Agent as a matter of politeness even though
 // no terms of use are published to follow.
 //
-// Only the Quebec City-Windsor Corridor is tracked (train numbers in
-// viaCorridorTrainNumbers, trains_via.go) — VIA's remote long-distance
-// services are out of scope by deliberate choice, not a technical
-// limitation; see that file and stations_via.go for why.
+// Covers all 8 VIA corridors — the Quebec City-Windsor Corridor
+// (trains_via.go) plus the 7 remote/long-distance named services
+// (trains_via_remote.go: The Canadian, the Ocean, Winnipeg-Churchill,
+// Sudbury-White River, Jasper-Prince Rupert, Montreal-Jonquière,
+// Montreal-Senneterre). Train numbers are confirmed unique across all 8
+// (see trains_via_remote.go's header comment), so loadVIADBTrains below
+// builds one flat global number index instead of needing Amtrak-style
+// route-name disambiguation for ambiguous numbers.
 //
 // Confirmed empirically against the live endpoint: each entry is keyed by
 // "<train number>" normally, or "<train number> (MM-DD)" when more than one
@@ -69,7 +73,40 @@ type viaSource struct{}
 func (viaSource) Key() string       { return "via-rail" }
 func (viaSource) NeedsAPIKey() bool { return false }
 func (viaSource) Description() string {
-	return `Position data comes from an <strong>unofficial</strong> source: the same JSON endpoint VIA Rail's own public train tracker (tsimobile.viarail.ca) calls in the browser. VIA publishes no official real-time developer API, only static schedules, so this could change or stop working without notice. Covers the Quebec City-Windsor Corridor only (Toronto/Ottawa/Montreal/Quebec area) — VIA's remote long-distance services (The Canadian, the Ocean, etc.) aren't tracked.`
+	return `Position data comes from an <strong>unofficial</strong> source: the same JSON endpoint VIA Rail's own public train tracker (tsimobile.viarail.ca) calls in the browser. VIA publishes no official real-time developer API, only static schedules, so this could change or stop working without notice. Covers all of VIA's network: the Quebec City-Windsor Corridor plus the remote/long-distance services (The Canadian, the Ocean, Winnipeg-Churchill, Sudbury-White River, Jasper-Prince Rupert, Montreal-Jonquière, Montreal-Senneterre) — most of the latter run only a few times a week, so an empty map for them most days is expected, not a bug.`
+}
+
+// viaCorridorSlugs lists every corridor this source matches live trains
+// into. One live_sources row (this one) covers all of them, same "one
+// provider, many corridors" idiom Metra uses for its 11 lines.
+var viaCorridorSlugs = []string{
+	"via-rail-corridor",
+	"via-the-canadian",
+	"via-the-ocean",
+	"via-winnipeg-churchill",
+	"via-sudbury-white-river",
+	"via-jasper-prince-rupert",
+	"via-montreal-jonquiere",
+	"via-montreal-senneterre",
+}
+
+// loadVIADBTrains merges the per-corridor indexes for every VIA corridor
+// into one flat number -> train map. Safe as a flat merge (rather than
+// needing Amtrak-style route-name disambiguation for a collision) because
+// train numbers are confirmed unique across all 8 corridors — see
+// trains_via_remote.go's header comment.
+func loadVIADBTrains(app *App) (map[string]dbTrain, error) {
+	out := map[string]dbTrain{}
+	for _, slug := range viaCorridorSlugs {
+		idx, err := loadDBTrainsByCorridorSlug(app, slug)
+		if err != nil {
+			return nil, err
+		}
+		for num, t := range idx {
+			out[num] = t
+		}
+	}
+	return out, nil
 }
 
 // viaTrainNumberFromKey strips the optional " (MM-DD)" run-disambiguation
@@ -142,12 +179,12 @@ func viaProgressFor(entry viaTrainEntry) viaProgress {
 }
 
 func (viaSource) Fetch(app *App) ([]liveTrain, error) {
-	index, err := loadDBTrainsByCorridorSlug(app, "via-rail-corridor")
+	index, err := loadVIADBTrains(app)
 	if err != nil {
 		return nil, err
 	}
 	if len(index) == 0 {
-		return nil, fmt.Errorf("no active VIA Rail Corridor trains in the database to match against")
+		return nil, fmt.Errorf("no active VIA Rail trains in the database to match against")
 	}
 
 	req, err := http.NewRequest("GET", viaLiveDataURL, nil)
@@ -209,30 +246,46 @@ func (viaSource) Fetch(app *App) ([]liveTrain, error) {
 
 // ---- Route line geometry (for the public map's "Route lines" layer) ----
 //
-// VIA's static GTFS zip (same source as trains_via.go/stations_via.go's
-// rosters, no key needed) has its own shapes.txt. Like Metra (metra.go) and
-// unlike single-shape sources, this needs each shape's own route_id
-// (trips.txt) to know which ones belong to the Corridor — VIA's
-// long-distance shapes (The Canadian, the Ocean, etc.) live in the same
-// static feed and must be excluded, same reasoning as trains_via.go's
-// roster scoping. Unlike Metra, every included shape belongs to the same
-// one corridor here, so no per-shape corridor tag is needed —
-// shapesToFeatureCollection's single shared name is enough.
+// VIA's static GTFS zip (same source as trains_via.go/trains_via_remote.go's
+// rosters, no key needed) has its own shapes.txt. Like Metra (metra.go),
+// this needs each shape's own route_id (trips.txt) to know which corridor it
+// belongs to — unlike Metra, though, every one of VIA's route_ids is
+// tracked under some corridor now (none are out of scope), so every shape in
+// the feed ends up included, just tagged differently.
+//
+// viaRouteIDToTagName's values are deliberately plain-ASCII, English-only
+// labels distinct from the corridor's cosmetic display name (e.g.
+// "VIA Montreal Jonquiere", not "VIA Rail — Montréal–Jonquière") — this
+// value becomes a GeoJSON feature's "name" property, which the map's
+// jsSlugify() (templates/map.html) turns into a corridor slug to match
+// against; jsSlugify only preserves [a-z0-9], so an accented character or
+// em-dash would silently break the word boundary it sits next to (e.g.
+// "Montréal" -> "montr-al"). Each value here is chosen so
+// jsSlugify(value) reproduces that corridor's actual slug exactly (verified
+// by inspection, same idiom as metraLineCorridorSlug's route-code ->
+// corridor-slug mapping, just inverted).
 const viaStaticGTFSURL = "https://viarail.ca/sites/all/files/gtfs/viarail.zip"
 
-// viaCorridorRouteIDs are the 9 static-GTFS route_ids that make up the
-// Quebec City-Windsor Corridor — see stations_via.go's comment for the full
-// list of routes and why the rest of VIA's network is excluded.
-var viaCorridorRouteIDs = map[string]bool{
-	"119-93":  true, // Toronto - London
-	"226-119": true, // Montréal - Toronto
-	"119-341": true, // Toronto - Sarnia
-	"617-628": true, // Ottawa - Québec
-	"119-618": true, // Toronto - Windsor
-	"617-226": true, // Ottawa - Montréal
-	"617-119": true, // Ottawa - Toronto
-	"628-576": true, // Québec - Fallowfield
-	"628-226": true, // Québec - Montréal
+var viaRouteIDToTagName = map[string]string{
+	// Quebec City-Windsor Corridor (trains_via.go) -> "via-rail-corridor"
+	"119-93":  "VIA Rail Corridor",
+	"226-119": "VIA Rail Corridor",
+	"119-341": "VIA Rail Corridor",
+	"617-628": "VIA Rail Corridor",
+	"119-618": "VIA Rail Corridor",
+	"617-226": "VIA Rail Corridor",
+	"617-119": "VIA Rail Corridor",
+	"628-576": "VIA Rail Corridor",
+	"628-226": "VIA Rail Corridor",
+	// Remote/long-distance services (trains_via_remote.go)
+	"8-119":   "VIA The Canadian",         // -> "via-the-canadian"
+	"226-620": "VIA The Ocean",            // -> "via-the-ocean"
+	"388-435": "VIA Winnipeg Churchill",   // -> "via-winnipeg-churchill"
+	"149-435": "VIA Winnipeg Churchill",   // -> "via-winnipeg-churchill"
+	"621-116": "VIA Sudbury White River",  // -> "via-sudbury-white-river"
+	"21-458":  "VIA Jasper Prince Rupert", // -> "via-jasper-prince-rupert"
+	"226-444": "VIA Montreal Jonquiere",   // -> "via-montreal-jonquiere"
+	"226-460": "VIA Montreal Senneterre",  // -> "via-montreal-senneterre"
 }
 
 var viaRouteLineCache routeLineCache
@@ -251,16 +304,29 @@ func fetchVIARouteGeoJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	corridorShapes := make(map[string][][2]float64, len(shapes))
+	features := make([]map[string]interface{}, 0, len(shapes))
 	for shapeID, coords := range shapes {
-		if viaCorridorRouteIDs[shapeRoutes[shapeID]] {
-			corridorShapes[shapeID] = coords
+		if len(coords) < 2 {
+			continue
 		}
+		tagName, ok := viaRouteIDToTagName[shapeRoutes[shapeID]]
+		if !ok {
+			continue
+		}
+		features = append(features, map[string]interface{}{
+			"type":       "Feature",
+			"properties": map[string]interface{}{"name": tagName},
+			"geometry": map[string]interface{}{
+				"type":        "LineString",
+				"coordinates": coords,
+			},
+		})
 	}
-	if len(corridorShapes) == 0 {
+	if len(features) == 0 {
 		return emptyRouteGeoJSON(), nil
 	}
-	return shapesToFeatureCollection(corridorShapes, "VIA Rail Corridor"), nil
+	result := map[string]interface{}{"type": "FeatureCollection", "features": features}
+	return json.Marshal(result)
 }
 
 func (app *App) handleVIARoutes(w http.ResponseWriter, r *http.Request) {
