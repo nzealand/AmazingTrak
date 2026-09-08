@@ -39,6 +39,20 @@
   white-space: nowrap;
   padding: 1px 4px;
 }
+.leaflet-tooltip.station-label {
+  background: rgba(255,255,255,.92);
+  color: #1a1a2e;
+  border: none;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: sans-serif;
+  box-shadow: 0 1px 3px rgba(0,0,0,.35);
+}
+.leaflet-tooltip-right.station-label::before {
+  border-right-color: rgba(255,255,255,.92);
+}
 </style>
 {{end}}
 {{define "content"}}
@@ -335,6 +349,10 @@ function findCorridorSlug(name) {
   var meLayer = L.layerGroup().addTo(map);
   var locateBtn = null;
   var locateActive = false;
+  // Set while locate-me is active, so station labels can prioritize
+  // whichever stations are closest to the user instead of just picking
+  // whichever happen to come first in fetch order.
+  var myLatLng = null;
 
   function setLocateActive(active) {
     locateActive = active;
@@ -348,6 +366,8 @@ function findCorridorSlug(name) {
   function clearLocate() {
     meLayer.clearLayers();
     setLocateActive(false);
+    myLatLng = null;
+    updateStationLabels();
   }
 
   var LocateControl = L.Control.extend({
@@ -406,6 +426,8 @@ function findCorridorSlug(name) {
       }).addTo(meLayer);
       map.setView([lat, lon], 10);
       setLocateActive(true);
+      myLatLng = [lat, lon];
+      updateStationLabels();
     }, function(err) {
       btn.innerHTML = original;
       setLocateActive(false);
@@ -445,6 +467,53 @@ function findCorridorSlug(name) {
     .catch(function(err) { console.error('Vantage spots error:', err); });
 
   // ---- Train stations (every stop with known coordinates, on by default) ----
+  // Below STATION_LABEL_MIN_ZOOM every station's name would be shown at once
+  // — hundreds of overlapping labels — so names only render once zoomed in
+  // this far (matching the zoom locate-me itself jumps to, so sharing your
+  // location naturally crosses the threshold), and even then a greedy
+  // declutter pass in updateStationLabels hides whichever labels would
+  // collide on screen, preferring whichever are closest to the user when
+  // locate-me is active.
+  var STATION_LABEL_MIN_ZOOM = 10;
+  var stationEntries = []; // { marker, name, lat, lon }
+
+  function updateStationLabels() {
+    if (!layerOn('Train stations') || map.getZoom() < STATION_LABEL_MIN_ZOOM) {
+      stationEntries.forEach(function(e) { e.marker.closeTooltip(); });
+      return;
+    }
+    var bounds = map.getBounds().pad(0.1); // small margin so labels don't pop at the viewport edge
+    var candidates = stationEntries.filter(function(e) { return bounds.contains([e.lat, e.lon]); });
+    if (myLatLng) {
+      candidates.sort(function(a, b) {
+        return haversine(myLatLng, [a.lat, a.lon]) - haversine(myLatLng, [b.lat, b.lon]);
+      });
+    }
+
+    // Greedy placement: walk candidates in priority order, keep a label if
+    // its rough screen-space box doesn't overlap one already placed. Text
+    // width is estimated (not measured) — good enough for a declutter pass,
+    // not pixel-perfect layout.
+    var placed = [];
+    var kept = [];
+    candidates.forEach(function(e) {
+      var pt = map.latLngToContainerPoint([e.lat, e.lon]);
+      var w = e.name.length * 6 + 14;
+      var box = { x1: pt.x - 4, y1: pt.y - 9, x2: pt.x + 4 + w, y2: pt.y + 9 };
+      var overlaps = placed.some(function(p) {
+        return box.x1 < p.x2 && box.x2 > p.x1 && box.y1 < p.y2 && box.y2 > p.y1;
+      });
+      if (overlaps) return;
+      placed.push(box);
+      kept.push(e.marker);
+    });
+
+    stationEntries.forEach(function(e) {
+      if (kept.indexOf(e.marker) === -1) e.marker.closeTooltip();
+      else e.marker.openTooltip();
+    });
+  }
+
   fetch('/api/stations')
     .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(data) {
@@ -456,16 +525,25 @@ function findCorridorSlug(name) {
         if (s.slug) {
           popup += '<br><a href="/stations/' + s.slug + '" style="font-size:.82rem">Station details →</a>';
         }
-        L.circleMarker([s.lat, s.lon], {
+        var marker = L.circleMarker([s.lat, s.lon], {
           radius: 5,
           color: '#1a1a2e',
           weight: 1.5,
           fillColor: '#fff',
           fillOpacity: 1
-        }).bindPopup(popup).addTo(stationLayer);
+        }).bindPopup(popup).bindTooltip(esc(s.name), {
+          direction: 'right', offset: [7, 0], className: 'station-label', interactive: false
+        }).addTo(stationLayer);
+        stationEntries.push({ marker: marker, name: s.name, lat: s.lat, lon: s.lon });
       });
+      updateStationLabels();
     })
     .catch(function(err) { console.error('Stations error:', err); });
+
+  map.on('zoomend moveend', updateStationLabels);
+  map.on('overlayadd overlayremove', function(e) {
+    if (e.name === 'Train stations') updateStationLabels();
+  });
 
   // ---- Live train positions (only when enabled in admin settings) ----
   if (!LIVE_TRAINS_ENABLED) return;
