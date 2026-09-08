@@ -798,6 +798,126 @@ func runMigrations(db *sql.DB) error {
 		markMigration(db, 25)
 	}
 
+	// Migration 26: register LA Metrolink as a live source — disabled by
+	// default, needs an API key (see metrolink.go).
+	if !migrationApplied(db, 26) {
+		if _, err := db.Exec(`INSERT OR IGNORE INTO live_sources (source_key, display_name, enabled, poll_seconds) VALUES ('metrolink','LA Metrolink',0,90)`); err != nil {
+			return err
+		}
+		markMigration(db, 26)
+	}
+
+	// Migration 27: add the single consolidated "la-metrolink" corridor to
+	// already-seeded (upgraded) databases — same fresh-install hazard and
+	// guard as migration 19/23 (see migration 5's comment); a fresh install
+	// instead gets this from corridorSeeds in seed.go. One corridor for all
+	// 7 lines, not one per line like Metra — confirmed zero train-number
+	// collisions across lines, see metrolink.go.
+	if !migrationApplied(db, 27) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			if _, err := db.Exec(`
+				INSERT INTO corridors (name, slug, region, description, sort_order)
+				SELECT 'LA Metrolink', 'la-metrolink', 'California',
+					'Southern California commuter rail — Antelope Valley, Inland Empire-Orange County, Orange County, Riverside, San Bernardino, Ventura County, and 91 Lines, radiating from L.A. Union Station. Operated by the Southern California Regional Rail Authority, not Amtrak.',
+					COALESCE((SELECT MAX(sort_order) FROM corridors), 0) + 1
+				WHERE NOT EXISTS (SELECT 1 FROM corridors WHERE slug='la-metrolink')`); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 27)
+	}
+
+	// Migration 28: seed the full static-GTFS train roster for the
+	// "la-metrolink" corridor on already-seeded (upgraded) databases — same
+	// idiom as migration 20/24. Data lives in metrolinkTrainNumbers
+	// (trains_metrolink.go).
+	if !migrationApplied(db, 28) {
+		for i, num := range metrolinkTrainNumbers {
+			if _, err := db.Exec(`
+				INSERT OR IGNORE INTO trains (corridor_id, train_number, display_name, slug, sort_order)
+				SELECT id, ?, ?, ?, ? FROM corridors WHERE slug='la-metrolink'`,
+				num, "Metrolink "+num, "metrolink-"+num, i+1); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 28)
+	}
+
+	// Migration 29: seed the LA Metrolink station list on already-seeded
+	// (upgraded) databases — same idiom as migration 21/25. Data lives in
+	// metrolinkStops (stations_metrolink.go).
+	if !migrationApplied(db, 29) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			if err := seedCorridorStops(db, "la-metrolink", metrolinkStops); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 29)
+	}
+
+	// Migration 30: register VIA Rail as a live source — disabled by
+	// default, no API key needed (an unofficial/undocumented endpoint — see
+	// via.go).
+	if !migrationApplied(db, 30) {
+		if _, err := db.Exec(`INSERT OR IGNORE INTO live_sources (source_key, display_name, enabled, poll_seconds) VALUES ('via-rail','VIA Rail',0,90)`); err != nil {
+			return err
+		}
+		markMigration(db, 30)
+	}
+
+	// Migration 31: add the "via-rail-corridor" corridor (Quebec
+	// City-Windsor Corridor only, not VIA's full network — see
+	// stations_via.go) to already-seeded (upgraded) databases — same
+	// fresh-install hazard and guard as migration 23/27.
+	if !migrationApplied(db, 31) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			if _, err := db.Exec(`
+				INSERT INTO corridors (name, slug, region, description, sort_order)
+				SELECT 'VIA Rail Corridor', 'via-rail-corridor', 'Canada',
+					'VIA Rail''s Quebec City-Windsor Corridor — Toronto, Ottawa, Montreal, Quebec City, Windsor, London, and Niagara Falls area service. Canada''s busiest passenger rail corridor. Operated by VIA Rail, not Amtrak. VIA''s remote long-distance services (The Canadian, the Ocean, etc.) aren''t tracked here.',
+					COALESCE((SELECT MAX(sort_order) FROM corridors), 0) + 1
+				WHERE NOT EXISTS (SELECT 1 FROM corridors WHERE slug='via-rail-corridor')`); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 31)
+	}
+
+	// Migration 32: seed the VIA Rail Corridor train roster on
+	// already-seeded (upgraded) databases — same idiom as migration 24/28.
+	// Data lives in viaCorridorTrainNumbers (trains_via.go).
+	if !migrationApplied(db, 32) {
+		for i, num := range viaCorridorTrainNumbers {
+			if _, err := db.Exec(`
+				INSERT OR IGNORE INTO trains (corridor_id, train_number, display_name, slug, sort_order)
+				SELECT id, ?, ?, ?, ? FROM corridors WHERE slug='via-rail-corridor'`,
+				num, "VIA "+num, "via-"+num, i+1); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 32)
+	}
+
+	// Migration 33: seed the VIA Rail Corridor station list on
+	// already-seeded (upgraded) databases — same idiom as migration 25/29.
+	// Data lives in viaCorridorStops (stations_via.go).
+	if !migrationApplied(db, 33) {
+		var corridorCount int
+		db.QueryRow(`SELECT COUNT(*) FROM corridors`).Scan(&corridorCount)
+		if corridorCount > 0 {
+			if err := seedCorridorStops(db, "via-rail-corridor", viaCorridorStops); err != nil {
+				return err
+			}
+		}
+		markMigration(db, 33)
+	}
+
 	return nil
 }
 

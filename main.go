@@ -792,6 +792,8 @@ func main() {
 	mux.HandleFunc("GET /api/brightline-routes", app.handleBrightlineRoutes)
 	mux.HandleFunc("GET /api/metra-routes", app.handleMetraRoutes)
 	mux.HandleFunc("GET /api/njtransit-routes", app.handleNJTransitRoutes)
+	mux.HandleFunc("GET /api/metrolink-routes", app.handleMetrolinkRoutes)
+	mux.HandleFunc("GET /api/via-routes", app.handleVIARoutes)
 	mux.HandleFunc("GET /api/live-trains", app.handleLiveTrains)
 	mux.HandleFunc("GET /api/live-trains/{slug}", app.handleLiveTrain)
 	mux.HandleFunc("GET /api/trains/{slug}/stops", app.handleTrainStopsAPI)

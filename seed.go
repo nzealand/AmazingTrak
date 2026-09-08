@@ -48,6 +48,8 @@ var nonAmtrakOperators = map[string]struct{ prefix, label string }{
 	"metra-ncs":                       {"metra-ncs", "NCS"},
 	"metra-hc":                        {"metra-hc", "HC"},
 	"nj-transit":                      {"njt", "NJT"},
+	"la-metrolink":                    {"metrolink", "Metrolink"},
+	"via-rail-corridor":               {"via", "VIA"},
 }
 
 // corridorSeeds must be ordered so that auto-increment IDs match data.sql references (1..44).
@@ -246,6 +248,16 @@ var corridorSeeds = []corridorSeed{
 	// across NJT's 12 lines — see njtransit.go.
 	{"NJ Transit", "nj-transit", "Northeast",
 		"New Jersey Transit commuter rail — Atlantic City, Bergen County/Main, Gladstone Branch, Meadowlands, Montclair-Boonton, Morris & Essex, Northeast Corridor, North Jersey Coast, Pascack Valley, Port Jervis, Princeton Shuttle, and Raritan Valley lines. Operated by NJ Transit, not Amtrak.", 65},
+	// 66 — LA Metrolink, one consolidated corridor (not split per line like
+	// Metra): confirmed zero train-number collisions across all 7 lines in
+	// Metrolink's own static GTFS — see metrolink.go/trains_metrolink.go.
+	{"LA Metrolink", "la-metrolink", "California",
+		"Southern California commuter rail — Antelope Valley, Inland Empire-Orange County, Orange County, Riverside, San Bernardino, Ventura County, and 91 Lines, radiating from L.A. Union Station. Operated by the Southern California Regional Rail Authority, not Amtrak.", 66},
+	// 67 — VIA Rail Corridor (Canada), scoped to the Quebec City-Windsor
+	// Corridor only, not VIA's full national network — see
+	// stations_via.go/trains_via.go for why.
+	{"VIA Rail Corridor", "via-rail-corridor", "Canada",
+		"VIA Rail's Quebec City-Windsor Corridor — Toronto, Ottawa, Montreal, Quebec City, Windsor, London, and Niagara Falls area service. Canada's busiest passenger rail corridor. Operated by VIA Rail, not Amtrak. VIA's remote long-distance services (The Canadian, the Ocean, etc.) aren't tracked here.", 67},
 }
 
 // trainSeeds maps corridor index (0-based) → train numbers.
@@ -440,6 +452,12 @@ var trainSeeds = [][]string{
 	// 65 NJ Transit — starter roster (static GTFS has no train-number field
 	// to derive a full roster from); see njTransitTrainNumbers in njtransit.go.
 	njTransitTrainNumbers,
+	// 66 LA Metrolink — full static-GTFS train roster; see
+	// trains_metrolink.go for sourcing.
+	metrolinkTrainNumbers,
+	// 67 VIA Rail Corridor — full static-GTFS roster for the Corridor only;
+	// see trains_via.go for sourcing and scope.
+	viaCorridorTrainNumbers,
 }
 
 // otpSeeds maps corridor ID (1-based) → on-time percent.
@@ -573,6 +591,12 @@ func seedDB(db *sql.DB, adminUsername, adminPassword string) error {
 	}
 	if err := seedCorridorStops(tx, "nj-transit", njTransitStops); err != nil {
 		return fmt.Errorf("seed NJ Transit stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "la-metrolink", metrolinkStops); err != nil {
+		return fmt.Errorf("seed LA Metrolink stops: %w", err)
+	}
+	if err := seedCorridorStops(tx, "via-rail-corridor", viaCorridorStops); err != nil {
+		return fmt.Errorf("seed VIA Rail Corridor stops: %w", err)
 	}
 
 	// 2. Seed trains
