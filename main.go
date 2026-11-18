@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	_ "time/tzdata" // embed zone data so LoadLocation works on minimal servers
 )
 
 //go:embed templates static

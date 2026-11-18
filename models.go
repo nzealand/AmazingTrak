@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Corridor struct {
@@ -206,6 +207,10 @@ type StationTrain struct {
 	CorridorSlug       string
 	ScheduledArrival   string
 	ScheduledDeparture string
+	// Display-only, filled by the station handler (not from the DB).
+	Past     bool   // clearly already gone, based on station-local time
+	EstTime  string // live estimate (scheduled + current delay), e.g. "9:40a"
+	DelayMin int
 }
 
 type Suggestion struct {
@@ -1370,4 +1375,71 @@ func slugify(s string) string {
 		result = strings.ReplaceAll(result, "--", "-")
 	}
 	return strings.Trim(result, "-")
+}
+
+// stationLocation approximates a station's time zone from its longitude —
+// good enough for "is this train past?" without storing a tz per stop.
+// Falls back to nil (feature off) when the stop has no coordinates.
+func stationLocation(lon sql.NullFloat64) *time.Location {
+	if !lon.Valid {
+		return nil
+	}
+	name := "America/New_York"
+	switch x := lon.Float64; {
+	case x < -114.5:
+		name = "America/Los_Angeles"
+	case x < -102:
+		name = "America/Denver"
+	case x < -87:
+		name = "America/Chicago"
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil
+	}
+	return loc
+}
+
+func formatClock(mins int) string {
+	mins = ((mins % 1440) + 1440) % 1440
+	h, m, suffix := mins/60, mins%60, "a"
+	if h >= 12 {
+		suffix = "p"
+	}
+	if h %= 12; h == 0 {
+		h = 12
+	}
+	return fmt.Sprintf("%d:%02d%s", h, m, suffix)
+}
+
+// annotateStationTrains marks trains that are clearly past (more than 30 min
+// ago) and, for live trains within an hour of now, adds an estimated time
+// (scheduled + current delay). live may be nil. Pure arithmetic over a few
+// in-memory lookups — no extra I/O.
+func annotateStationTrains(ts []StationTrain, loc *time.Location, live func(slug string) *liveTrain) {
+	if loc == nil {
+		return
+	}
+	n := time.Now().In(loc)
+	nowMin := n.Hour()*60 + n.Minute()
+	for i := range ts {
+		t := &ts[i]
+		sched, ok := clockMinutes(t.ScheduledDeparture)
+		if !ok {
+			if sched, ok = clockMinutes(t.ScheduledArrival); !ok {
+				continue
+			}
+		}
+		// Signed distance from now, wrapped to [-720, 720) so overnight
+		// times near midnight compare correctly.
+		d := ((sched-nowMin+720)%1440+1440)%1440 - 720
+		if live != nil && d >= -60 && d <= 60 {
+			if lt := live(t.Slug); lt != nil && lt.HasDelayInfo && lt.DelayMin != 0 {
+				t.DelayMin = lt.DelayMin
+				t.EstTime = formatClock(sched + lt.DelayMin)
+				d += lt.DelayMin
+			}
+		}
+		t.Past = d < -30
+	}
 }

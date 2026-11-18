@@ -994,6 +994,11 @@ func (app *App) handleStation(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Database error", 500)
 			return
 		}
+		var liveLookup func(string) *liveTrain
+		if app.liveTrainsEnabled() {
+			liveLookup = app.findLiveTrain
+		}
+		annotateStationTrains(trains, stationLocation(stop.Longitude), liveLookup)
 		corridor, err := corridorByID(app.db, stop.CorridorID)
 		if err != nil {
 			continue
