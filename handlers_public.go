@@ -1002,7 +1002,6 @@ func (app *App) handleStation(w http.ResponseWriter, r *http.Request) {
 			liveLookup = app.findLiveTrain
 		}
 		loc := stationLocation(stop.Longitude)
-		trains = filterRunsToday(trains, loc)
 		annotateStationTrains(trains, loc, liveLookup)
 		corridor, err := corridorByID(app.db, stop.CorridorID)
 		if err != nil {

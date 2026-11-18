@@ -1455,6 +1455,10 @@ func annotateStationTrains(ts []StationTrain, loc *time.Location, live func(slug
 		if live != nil {
 			lt = live(t.Slug)
 		}
+		if !runsOnDay(t.RunsWeekday, t.RunsWeekend, loc) {
+			t.Past = true // not running today: grey out, no live estimate
+			continue
+		}
 		t.Past, t.EstTime, t.DelayMin = stopTiming(t.ScheduledArrival, t.ScheduledDeparture, loc, lt)
 	}
 }
@@ -1485,15 +1489,4 @@ func runsOnDay(weekday, weekend bool, loc *time.Location) bool {
 		return weekend
 	}
 	return weekday
-}
-
-// filterRunsToday drops station trains that don't run today.
-func filterRunsToday(ts []StationTrain, loc *time.Location) []StationTrain {
-	out := ts[:0]
-	for _, t := range ts {
-		if runsOnDay(t.RunsWeekday, t.RunsWeekend, loc) {
-			out = append(out, t)
-		}
-	}
-	return out
 }
