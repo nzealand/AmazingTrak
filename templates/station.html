@@ -30,6 +30,8 @@
           <div class="stop-name-row">
             <a href="/trains/{{.Slug}}" class="stop-name">{{.DisplayName}}</a>
             {{if .Direction}}<span class="stop-code">{{.Direction}}</span>{{end}}
+            {{if and .RunsWeekday (not .RunsWeekend)}}<span class="stop-day-badge stop-day-badge--weekday">Weekday</span>{{end}}
+            {{if and .RunsWeekend (not .RunsWeekday)}}<span class="stop-day-badge stop-day-badge--weekend">Weekend</span>{{end}}
           </div>
           {{if or .ScheduledArrival .ScheduledDeparture}}
           <div class="stop-times">
