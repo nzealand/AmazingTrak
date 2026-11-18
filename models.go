@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -894,7 +896,7 @@ func trainsByStopID(db *sql.DB, stopID int64) ([]StationTrain, error) {
 		JOIN trains t ON t.id=ts.train_id
 		JOIN corridors c ON c.id=t.corridor_id
 		WHERE ts.stop_id=? AND t.is_active=1
-		ORDER BY ts.scheduled_departure, ts.scheduled_arrival, t.train_number`, stopID)
+		ORDER BY t.train_number`, stopID)
 	if err != nil {
 		return nil, err
 	}
@@ -908,7 +910,61 @@ func trainsByStopID(db *sql.DB, stopID int64) ([]StationTrain, error) {
 		}
 		out = append(out, st)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sortStationTrains(out)
+	return out, nil
+}
+
+// clockMinutes parses stored times like "7:05p" / "8:27a" / "12:05 PM" into
+// minutes after midnight. ok is false for empty or unparseable values.
+func clockMinutes(s string) (int, bool) {
+	s = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), " ", ""))
+	if s == "" {
+		return 0, false
+	}
+	pm := false
+	switch {
+	case strings.HasSuffix(s, "pm"):
+		pm, s = true, strings.TrimSuffix(s, "pm")
+	case strings.HasSuffix(s, "am"):
+		s = strings.TrimSuffix(s, "am")
+	case strings.HasSuffix(s, "p"):
+		pm, s = true, strings.TrimSuffix(s, "p")
+	case strings.HasSuffix(s, "a"):
+		s = strings.TrimSuffix(s, "a")
+	}
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return 0, false
+	}
+	h, err1 := strconv.Atoi(parts[0])
+	m, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || h < 1 || h > 12 || m < 0 || m > 59 {
+		return 0, false
+	}
+	h %= 12
+	if pm {
+		h += 12
+	}
+	return h*60 + m, true
+}
+
+// sortStationTrains orders a station's trains chronologically by departure
+// (falling back to arrival). Trains with no usable time sort last. Stable, so
+// ties keep their incoming (train number) order.
+func sortStationTrains(ts []StationTrain) {
+	key := func(t StationTrain) int {
+		if m, ok := clockMinutes(t.ScheduledDeparture); ok {
+			return m
+		}
+		if m, ok := clockMinutes(t.ScheduledArrival); ok {
+			return m
+		}
+		return 1 << 30
+	}
+	sort.SliceStable(ts, func(i, j int) bool { return key(ts[i]) < key(ts[j]) })
 }
 
 func getSitePrefs(db *sql.DB) (SitePreferences, error) {

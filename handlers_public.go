@@ -1006,6 +1006,10 @@ func (app *App) handleStation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	for i := range entries {
+		sortStationTrains(entries[i].Trains) // merged across stops of a corridor
+	}
+
 	type stationData struct {
 		StationName string
 		StationCode string
