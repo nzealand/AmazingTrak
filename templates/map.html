@@ -798,7 +798,10 @@ function findCorridorSlug(name) {
       marker.addTo(trainLayer);
     } else {
       marker.setIcon(markerIcon(t));
-      marker.setLatLng(fixPoint);
+      // Only snap to the fix when it's actually newer. Re-applying the same
+      // fix (e.g. the per-train poll fired by opening a popup) would yank the
+      // marker back from its extrapolated position until the next tick.
+      if (!(prev.fixTime && fixTime <= prev.fixTime)) marker.setLatLng(fixPoint);
     }
 
     trainState[t.runKey] = {
