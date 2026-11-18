@@ -547,6 +547,9 @@ func (app *App) handleTrain(w http.ResponseWriter, r *http.Request) {
 	// user is the conductor of this train's corridor.
 	_, _, canManage := app.conductorGuard(r, train.CorridorID)
 
+	liveTrainForPage := app.findLiveTrain(train.Slug)
+	annotateTrainStops(stops, liveTrainForPage)
+
 	type trainDetail struct {
 		Train              Train
 		HeroMedia          *Media
@@ -578,7 +581,7 @@ func (app *App) handleTrain(w http.ResponseWriter, r *http.Request) {
 			Comments:           comments,
 			OwnPendingComments: ownPendingComments,
 			CanManage:          canManage,
-			Live:               app.findLiveTrain(train.Slug),
+			Live:               liveTrainForPage,
 		},
 	})
 }
@@ -998,7 +1001,9 @@ func (app *App) handleStation(w http.ResponseWriter, r *http.Request) {
 		if app.liveTrainsEnabled() {
 			liveLookup = app.findLiveTrain
 		}
-		annotateStationTrains(trains, stationLocation(stop.Longitude), liveLookup)
+		loc := stationLocation(stop.Longitude)
+		trains = filterRunsToday(trains, loc)
+		annotateStationTrains(trains, loc, liveLookup)
 		corridor, err := corridorByID(app.db, stop.CorridorID)
 		if err != nil {
 			continue

@@ -225,7 +225,7 @@
       <h2 class="section-heading" style="margin-top:0">Route &amp; Schedule</h2>
       <ol class="stop-list stop-list--schedule">
         {{range $d.Stops}}
-        <li class="stop-item">
+        <li class="stop-item"{{if .Past}} style="opacity:.45"{{end}}>
           <span class="stop-dot"></span>
           <div class="stop-detail">
             <div class="stop-name-row">
@@ -239,6 +239,7 @@
               {{if .ScheduledArrival}}<span class="stop-time-label">Arr</span> <span class="stop-time">{{.ScheduledArrival}}</span>{{end}}
               {{if and .ScheduledArrival .ScheduledDeparture}}<span style="margin:0 .25rem;color:var(--muted)">·</span>{{end}}
               {{if .ScheduledDeparture}}<span class="stop-time-label">Dep</span> <span class="stop-time">{{.ScheduledDeparture}}</span>{{end}}
+              {{if .EstTime}}<span style="margin-left:.4rem;color:{{if gt .DelayMin 0}}#c0392b{{else}}#2e7d32{{end}}" title="Scheduled time plus the train's current delay">≈ {{.EstTime}} ({{if gt .DelayMin 0}}+{{.DelayMin}}{{else}}{{.DelayMin}}{{end}} min)</span>{{end}}
             </div>
             {{end}}
           </div>

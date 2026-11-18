@@ -160,6 +160,10 @@ type TrainStop struct {
 	StopSlug           string
 	Latitude           sql.NullFloat64
 	Longitude          sql.NullFloat64
+	// Display-only, filled by annotateTrainStops.
+	Past     bool
+	EstTime  string
+	DelayMin int
 }
 
 type SitePreferences struct {
@@ -207,6 +211,8 @@ type StationTrain struct {
 	CorridorSlug       string
 	ScheduledArrival   string
 	ScheduledDeparture string
+	RunsWeekday        bool
+	RunsWeekend        bool
 	// Display-only, filled by the station handler (not from the DB).
 	Past     bool   // clearly already gone, based on station-local time
 	EstTime  string // live estimate (scheduled + current delay), e.g. "9:40a"
@@ -896,7 +902,8 @@ func stopsBySlug(db *sql.DB, slug string) ([]Stop, error) {
 func trainsByStopID(db *sql.DB, stopID int64) ([]StationTrain, error) {
 	rows, err := db.Query(`SELECT t.id, t.display_name, t.slug, COALESCE(t.direction,''), t.is_active,
 		c.name, c.slug,
-		COALESCE(ts.scheduled_arrival,''), COALESCE(ts.scheduled_departure,'')
+		COALESCE(ts.scheduled_arrival,''), COALESCE(ts.scheduled_departure,''),
+		COALESCE(ts.runs_weekday,1), COALESCE(ts.runs_weekend,1)
 		FROM train_stops ts
 		JOIN trains t ON t.id=ts.train_id
 		JOIN corridors c ON c.id=t.corridor_id
@@ -910,7 +917,8 @@ func trainsByStopID(db *sql.DB, stopID int64) ([]StationTrain, error) {
 	for rows.Next() {
 		var st StationTrain
 		if err := rows.Scan(&st.TrainID, &st.DisplayName, &st.Slug, &st.Direction, &st.IsActive,
-			&st.CorridorName, &st.CorridorSlug, &st.ScheduledArrival, &st.ScheduledDeparture); err != nil {
+			&st.CorridorName, &st.CorridorSlug, &st.ScheduledArrival, &st.ScheduledDeparture,
+			&st.RunsWeekday, &st.RunsWeekend); err != nil {
 			return nil, err
 		}
 		out = append(out, st)
@@ -1412,34 +1420,68 @@ func formatClock(mins int) string {
 	return fmt.Sprintf("%d:%02d%s", h, m, suffix)
 }
 
-// annotateStationTrains marks trains that are clearly past (more than 30 min
-// ago) and, for live trains within an hour of now, adds an estimated time
-// (scheduled + current delay). live may be nil. Pure arithmetic over a few
-// in-memory lookups — no extra I/O.
-func annotateStationTrains(ts []StationTrain, loc *time.Location, live func(slug string) *liveTrain) {
+// stopTiming works out, for one scheduled time at one station, whether it's
+// clearly past (more than 30 min ago, station-local) and — when the train is
+// live with a known delay and the time is within an hour of now — an
+// estimated time (scheduled + current delay). Pure arithmetic, no I/O.
+func stopTiming(arr, dep string, loc *time.Location, lt *liveTrain) (past bool, est string, delay int) {
 	if loc == nil {
 		return
 	}
+	sched, ok := clockMinutes(dep)
+	if !ok {
+		if sched, ok = clockMinutes(arr); !ok {
+			return
+		}
+	}
 	n := time.Now().In(loc)
 	nowMin := n.Hour()*60 + n.Minute()
+	// Signed distance from now, wrapped to [-720, 720) so overnight times
+	// near midnight compare correctly.
+	d := ((sched-nowMin+720)%1440+1440)%1440 - 720
+	if lt != nil && lt.HasDelayInfo && lt.DelayMin != 0 && d >= -60 && d <= 60 {
+		delay = lt.DelayMin
+		est = formatClock(sched + delay)
+		d += delay
+	}
+	return d < -30, est, delay
+}
+
+// annotateStationTrains fills Past/EstTime on a station's trains. live may be nil.
+func annotateStationTrains(ts []StationTrain, loc *time.Location, live func(slug string) *liveTrain) {
 	for i := range ts {
 		t := &ts[i]
-		sched, ok := clockMinutes(t.ScheduledDeparture)
-		if !ok {
-			if sched, ok = clockMinutes(t.ScheduledArrival); !ok {
-				continue
-			}
+		var lt *liveTrain
+		if live != nil {
+			lt = live(t.Slug)
 		}
-		// Signed distance from now, wrapped to [-720, 720) so overnight
-		// times near midnight compare correctly.
-		d := ((sched-nowMin+720)%1440+1440)%1440 - 720
-		if live != nil && d >= -60 && d <= 60 {
-			if lt := live(t.Slug); lt != nil && lt.HasDelayInfo && lt.DelayMin != 0 {
-				t.DelayMin = lt.DelayMin
-				t.EstTime = formatClock(sched + lt.DelayMin)
-				d += lt.DelayMin
-			}
-		}
-		t.Past = d < -30
+		t.Past, t.EstTime, t.DelayMin = stopTiming(t.ScheduledArrival, t.ScheduledDeparture, loc, lt)
 	}
+}
+
+// annotateTrainStops is the train-page counterpart: each stop uses its own
+// station's approximate local time zone and the train's single live delay.
+func annotateTrainStops(stops []TrainStop, lt *liveTrain) {
+	for i := range stops {
+		st := &stops[i]
+		st.Past, st.EstTime, st.DelayMin = stopTiming(st.ScheduledArrival, st.ScheduledDeparture, stationLocation(st.Longitude), lt)
+	}
+}
+
+// filterRunsToday drops trains that don't run on the station's current day
+// type (Mon–Fri = weekday, Sat/Sun = weekend). A train flagged for neither is
+// kept. With no known time zone, nothing is filtered.
+func filterRunsToday(ts []StationTrain, loc *time.Location) []StationTrain {
+	if loc == nil {
+		return ts
+	}
+	wd := time.Now().In(loc).Weekday()
+	weekend := wd == time.Saturday || wd == time.Sunday
+	out := ts[:0]
+	for _, t := range ts {
+		if (!t.RunsWeekday && !t.RunsWeekend) || (weekend && t.RunsWeekend) || (!weekend && t.RunsWeekday) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
