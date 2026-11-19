@@ -228,7 +228,27 @@ function findCorridorSlug(name) {
     preferCanvas: MAP_PREFER_CANVAS
   });
 
-  mapTileLayer(L, CARTO_API_KEY).addTo(map);
+  // Basemaps: the default street map, plus a road-free terrain backdrop for
+  // viewers who want just the rail lines. Streets are baked into the street
+  // tiles, so "no streets" has to be a different tile set, not a toggle. The
+  // choice is remembered per browser (try/catch: localStorage can throw).
+  var BASEMAP_KEY = 'amazingtrak-basemap';
+  var streetsBase = mapTileLayer(L, CARTO_API_KEY);
+  var terrainBase = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}',
+    {
+      maxZoom: 19,
+      maxNativeZoom: 13, // Esri's set stops at 13; Leaflet scales the last level above that
+      attribution: 'Tiles &copy; Esri &mdash; Esri, USGS, NOAA'
+    }
+  );
+  var baseLayers = { 'Streets': streetsBase, 'Terrain (no streets)': terrainBase };
+  var savedBase = null;
+  try { savedBase = localStorage.getItem(BASEMAP_KEY); } catch (e) {}
+  (baseLayers[savedBase] || streetsBase).addTo(map);
+  map.on('baselayerchange', function(e) {
+    try { localStorage.setItem(BASEMAP_KEY, e.name); } catch (err) {}
+  });
 
   // Sticky layer visibility: Route lines / Live trains / Vantage spots each
   // remember their on/off state across reloads, keyed by the same name shown
@@ -472,7 +492,7 @@ function findCorridorSlug(name) {
   var overlays = { 'Route lines': routeLayer, 'Train stations': stationLayer };
   if (LIVE_TRAINS_ENABLED) overlays['Live trains'] = trainLayer;
   overlays['Vantage spots'] = vantageLayer;
-  L.control.layers(null, overlays, { collapsed: false, position: 'topright' }).addTo(map);
+  L.control.layers(baseLayers, overlays, { collapsed: false, position: 'topright' }).addTo(map);
 
   map.on('overlayadd', function(e) {
     layerPrefs[e.name] = true;
