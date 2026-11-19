@@ -116,6 +116,10 @@ func runMigrations(db *sql.DB) error {
 	// api_key; admin-entered on Settings rather than an env var so it's
 	// editable without a redeploy, matching the live_sources api_key pattern.
 	db.Exec(`ALTER TABLE site_preferences ADD COLUMN carto_api_key TEXT NOT NULL DEFAULT ''`)
+	// Draw the public map's route lines/station dots on one canvas instead of
+	// thousands of SVG nodes (much faster zooming). On by default; admins can
+	// turn it off on Settings if canvas rendering misbehaves for them.
+	db.Exec(`ALTER TABLE site_preferences ADD COLUMN map_canvas_render INTEGER NOT NULL DEFAULT 1`)
 	// Password reset: a single-use token + timestamp, kept separate from the
 	// email-confirmation token so resetting a password never disturbs verification.
 	db.Exec(`ALTER TABLE users ADD COLUMN reset_token TEXT NOT NULL DEFAULT ''`)
@@ -1046,6 +1050,15 @@ func runMigrations(db *sql.DB) error {
 			}
 		}
 		markMigration(db, 37)
+	}
+
+	// Migration 38: per-train schedules for Amtrak corridors from Amtrak's
+	// GTFS (see amtrak_schedules.go). Only trains with no schedule are filled.
+	if !migrationApplied(db, 38) {
+		if err := seedAmtrakSchedules(db); err != nil {
+			return err
+		}
+		markMigration(db, 38)
 	}
 
 	return nil

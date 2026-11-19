@@ -237,6 +237,7 @@ func (app *App) handleMap(w http.ResponseWriter, r *http.Request) {
 		LiveTrains       bool
 		LiveTrainsPollMs int
 		CartoAPIKey      string
+		MapCanvasRender  bool
 	}
 	app.renderPublic(w, r, "map.html", publicPage{
 		Title: "Passenger Rail Route Map | AmazingTrak",
@@ -245,6 +246,7 @@ func (app *App) handleMap(w http.ResponseWriter, r *http.Request) {
 			LiveTrains:       app.liveTrainsEnabled(),
 			LiveTrainsPollMs: int(app.liveTrainsPollInterval() / time.Millisecond),
 			CartoAPIKey:      prefs.CartoAPIKey,
+			MapCanvasRender:  prefs.MapCanvasRender,
 		},
 	})
 }

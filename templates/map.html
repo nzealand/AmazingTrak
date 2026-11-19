@@ -94,6 +94,8 @@ var LIVE_TRAINS_ENABLED = {{if .Data.LiveTrains}}true{{else}}false{{end}};
 var LIVE_TRAINS_POLL_MS = {{.Data.LiveTrainsPollMs}};
 // Set via CARTO_API_KEY env var; empty falls back to plain OSM tiles even in dark mode.
 var CARTO_API_KEY = "{{.Data.CartoAPIKey}}";
+// Admin setting (Settings → Map Performance): canvas-render vector layers.
+var MAP_PREFER_CANVAS = {{if .Data.MapCanvasRender}}true{{else}}false{{end}};
 function findCorridorSlug(name) {
   var norm = normSlug(jsSlugify(name));
   return CORRIDOR_BY_NORM[norm] || null;
@@ -222,7 +224,8 @@ function findCorridorSlug(name) {
   var map = L.map('amtrak-map', {
     center: [39.5, -98.35],
     zoom: 4,
-    scrollWheelZoom: true
+    scrollWheelZoom: true,
+    preferCanvas: MAP_PREFER_CANVAS
   });
 
   mapTileLayer(L, CARTO_API_KEY).addTo(map);

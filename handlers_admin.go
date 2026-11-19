@@ -2019,6 +2019,16 @@ func (app *App) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) 
 		app.logAudit(s.AdminUserID, "update_map_tile_settings", "site_preferences", 1, "")
 		setFlash(w, "Map tile settings saved.")
 
+	case "map_performance":
+		canvas := lastFormValue(r, "map_canvas_render") == "1"
+		if _, err := app.db.Exec(`UPDATE site_preferences SET map_canvas_render=? WHERE id=1`, boolToInt(canvas)); err != nil {
+			setFlash(w, "Error saving map performance settings: "+err.Error())
+			http.Redirect(w, r, app.adminPrefix+"/settings", http.StatusSeeOther)
+			return
+		}
+		app.logAudit(s.AdminUserID, "update_map_performance_settings", "site_preferences", 1, "")
+		setFlash(w, "Map performance settings saved.")
+
 	case "rate_limits":
 		perMin, err1 := strconv.Atoi(r.FormValue("rate_per_minute"))
 		perHour, err2 := strconv.Atoi(r.FormValue("rate_per_hour"))

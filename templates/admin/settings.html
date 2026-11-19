@@ -343,5 +343,22 @@
     </form>
   </section>
 
+  <section>
+    <h3 style="font-size:1rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)">Map Performance</h3>
+    <form method="post" action="{{.AdminPrefix}}/settings" class="admin-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="map_performance">
+      <div class="form-group">
+        <label class="form-label">
+          <input type="hidden" name="map_canvas_render" value="0">
+          <input type="checkbox" name="map_canvas_render" value="1" {{if $d.Prefs.MapCanvasRender}}checked{{end}}>
+          Fast canvas rendering on the public map
+        </label>
+        <div class="form-hint">Draws route lines and station dots on a single canvas instead of thousands of SVG elements, which makes zooming and panning noticeably smoother. Uncheck to go back to SVG rendering if you see any drawing problems.</div>
+      </div>
+      <button class="btn btn-primary" type="submit">Save Map Performance Settings</button>
+    </form>
+  </section>
+
 </div>
 {{end}}
