@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -83,11 +84,29 @@ func emptyRouteGeoJSON() []byte {
 // map (via findCorridorSlug) to the one corridor regardless of which
 // branch/line/direction the shape belongs to.
 func shapesToFeatureCollection(shapesByID map[string][][2]float64, corridorName string) []byte {
-	features := make([]map[string]interface{}, 0, len(shapesByID))
-	for _, coords := range shapesByID {
+	// A GTFS feed has one shape per trip pattern, so large agencies ship
+	// thousands of near-identical (or reversed) copies of the same track —
+	// NJ Transit's came to 3,709 shapes / 972k points / 22 MB of JSON for ~330
+	// distinct lines. Round to ~1 m, simplify to ~2 m (invisible even at the
+	// map's max zoom), and drop exact duplicates in either direction.
+	ids := make([]string, 0, len(shapesByID))
+	for id := range shapesByID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids) // deterministic output (and thus cache bytes)
+
+	seen := map[string]bool{}
+	features := make([]map[string]interface{}, 0, len(ids))
+	for _, id := range ids {
+		coords := reduceShape(shapesByID[id])
 		if len(coords) < 2 {
 			continue
 		}
+		key := shapeKey(coords)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		features = append(features, map[string]interface{}{
 			"type":       "Feature",
 			"properties": map[string]interface{}{"name": corridorName},
@@ -100,6 +119,93 @@ func shapesToFeatureCollection(shapesByID map[string][][2]float64, corridorName 
 	result := map[string]interface{}{"type": "FeatureCollection", "features": features}
 	data, _ := json.Marshal(result)
 	return data
+}
+
+const (
+	shapeRoundScale  = 1e5     // 5 decimal places ≈ 1.1 m
+	shapeSimplifyDeg = 0.00002 // ≈ 2 m
+)
+
+// reduceShape rounds a polyline's points, collapses repeats, and simplifies
+// it with Douglas–Peucker (endpoints always kept).
+func reduceShape(in [][2]float64) [][2]float64 {
+	pts := make([][2]float64, 0, len(in))
+	for _, p := range in {
+		q := [2]float64{math.Round(p[0]*shapeRoundScale) / shapeRoundScale, math.Round(p[1]*shapeRoundScale) / shapeRoundScale}
+		if n := len(pts); n > 0 && pts[n-1] == q {
+			continue
+		}
+		pts = append(pts, q)
+	}
+	return simplifyShape(pts, shapeSimplifyDeg)
+}
+
+func simplifyShape(pts [][2]float64, tol float64) [][2]float64 {
+	n := len(pts)
+	if n <= 2 {
+		return pts
+	}
+	keep := make([]bool, n)
+	keep[0], keep[n-1] = true, true
+	t2 := tol * tol
+	stack := [][2]int{{0, n - 1}}
+	for len(stack) > 0 {
+		lo, hi := stack[len(stack)-1][0], stack[len(stack)-1][1]
+		stack = stack[:len(stack)-1]
+		ax, ay := pts[lo][0], pts[lo][1]
+		dx, dy := pts[hi][0]-ax, pts[hi][1]-ay
+		len2 := dx*dx + dy*dy
+		maxD, idx := 0.0, -1
+		for i := lo + 1; i < hi; i++ {
+			px, py := pts[i][0]-ax, pts[i][1]-ay
+			var d2 float64
+			if len2 == 0 {
+				d2 = px*px + py*py
+			} else {
+				u := math.Max(0, math.Min(1, (px*dx+py*dy)/len2))
+				ex, ey := px-u*dx, py-u*dy
+				d2 = ex*ex + ey*ey
+			}
+			if d2 > maxD {
+				maxD, idx = d2, i
+			}
+		}
+		if idx != -1 && maxD > t2 {
+			keep[idx] = true
+			stack = append(stack, [2]int{lo, idx}, [2]int{idx, hi})
+		}
+	}
+	out := make([][2]float64, 0, n)
+	for i, k := range keep {
+		if k {
+			out = append(out, pts[i])
+		}
+	}
+	return out
+}
+
+// shapeKey is a direction-independent identity for a polyline, so a shape and
+// its reverse count as duplicates.
+func shapeKey(pts [][2]float64) string {
+	enc := func(rev bool) string {
+		var b strings.Builder
+		for i := range pts {
+			p := pts[i]
+			if rev {
+				p = pts[len(pts)-1-i]
+			}
+			b.WriteString(strconv.FormatFloat(p[0], 'f', 5, 64))
+			b.WriteByte(',')
+			b.WriteString(strconv.FormatFloat(p[1], 'f', 5, 64))
+			b.WriteByte(';')
+		}
+		return b.String()
+	}
+	f, r := enc(false), enc(true)
+	if r < f {
+		return r
+	}
+	return f
 }
 
 // parseGTFSShapesZip extracts shapes.txt from a downloaded static GTFS zip

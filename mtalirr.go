@@ -109,9 +109,9 @@ func (lirrSource) Fetch(app *App) ([]liveTrain, error) {
 //
 // Unlike LIRR's live-position feed, this hits the MTA's static GTFS bundle
 // (a zip, not GTFS-RT protobuf) — same public/no-key access. Confirmed
-// empirically: web.mta.info 301s this to an S3 bucket, which the default
-// http.Client follows automatically.
-const lirrStaticGTFSURL = "http://web.mta.info/developers/data/lirr/google_transit.zip"
+// empirically: web.mta.info used to 301 to this S3 bucket, but now redirects
+// to the MTA homepage (HTML, not a zip) — so hit the bucket directly.
+const lirrStaticGTFSURL = "https://rrgtfsfeeds.s3.amazonaws.com/gtfslirr.zip"
 
 var lirrRouteLineCache routeLineCache
 

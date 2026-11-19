@@ -263,6 +263,84 @@ function findCorridorSlug(name) {
   var routeColorIndex = 0;
   var totalRouteCount = 0;
 
+  // ---- Route-line level of detail ----
+  // Leaflet re-projects every vertex of every polyline on each zoom, so
+  // drawing full-resolution track at world zoom (where most of that detail is
+  // sub-pixel) froze the main thread ~150ms per zoom step. Instead each route
+  // keeps three versions — coarse / medium / full — and the one matching the
+  // current zoom is shown, swapped only when the zoom crosses a band edge.
+  // Tolerances are in degrees, kept under ~1px at the top zoom of each band.
+  // (ROUTE_LINES, used for train snapping, always stays full resolution.)
+  var LOD_TOLERANCE = [0.015, 0.002, 0];   // coarse, medium, full
+  function lodLevel(zoom) { return zoom <= 5 ? 0 : (zoom <= 8 ? 1 : 2); }
+
+  // Iterative Douglas–Peucker on [lon,lat] points; endpoints always kept.
+  function simplifyLine(pts, tol) {
+    var n = pts.length;
+    if (n <= 2 || tol <= 0) return pts;
+    var keep = new Uint8Array(n);
+    keep[0] = keep[n - 1] = 1;
+    var stack = [0, n - 1];
+    var t2 = tol * tol;
+    while (stack.length) {
+      var hi = stack.pop(), lo = stack.pop();
+      var ax = pts[lo][0], ay = pts[lo][1];
+      var dx = pts[hi][0] - ax, dy = pts[hi][1] - ay;
+      var len2 = dx * dx + dy * dy;
+      var maxD = 0, idx = -1;
+      for (var i = lo + 1; i < hi; i++) {
+        var px = pts[i][0] - ax, py = pts[i][1] - ay, d2;
+        if (len2 === 0) {
+          d2 = px * px + py * py;
+        } else {
+          var u = Math.max(0, Math.min(1, (px * dx + py * dy) / len2));
+          var ex = px - u * dx, ey = py - u * dy;
+          d2 = ex * ex + ey * ey;
+        }
+        if (d2 > maxD) { maxD = d2; idx = i; }
+      }
+      if (idx !== -1 && maxD > t2) {
+        keep[idx] = 1;
+        stack.push(lo, idx, idx, hi);
+      }
+    }
+    var out = [];
+    for (var k = 0; k < n; k++) if (keep[k]) out.push(pts[k]);
+    return out;
+  }
+
+  function simplifyGeometry(geom, tol) {
+    if (!geom || tol <= 0) return geom;
+    if (geom.type === 'LineString') {
+      return { type: 'LineString', coordinates: simplifyLine(geom.coordinates, tol) };
+    }
+    if (geom.type === 'MultiLineString') {
+      return { type: 'MultiLineString', coordinates: geom.coordinates.map(function(l) { return simplifyLine(l, tol); }) };
+    }
+    return geom;
+  }
+
+  var routeFeatures = [];   // { layer, geom, lods: [coarse, medium, full], level }
+  var currentLodLevel = lodLevel(map.getZoom());
+
+  function routeGeometryAt(rec, level) {
+    if (!rec.lods[level]) rec.lods[level] = simplifyGeometry(rec.geom, LOD_TOLERANCE[level]);
+    return rec.lods[level];
+  }
+
+  function applyRouteLod() {
+    var level = lodLevel(map.getZoom());
+    if (level === currentLodLevel) return;
+    currentLodLevel = level;
+    routeFeatures.forEach(function(rec) {
+      if (rec.level === level) return;
+      rec.level = level;
+      rec.layer.clearLayers();
+      rec.layer.addData({ type: 'Feature', properties: rec.props, geometry: routeGeometryAt(rec, level) });
+    });
+  }
+  map.on('zoomend', applyRouteLod);
+
   function loadRouteSource(url, scheduleLabel) {
     return fetch(url)
       .then(function(r) {
@@ -293,9 +371,12 @@ function findCorridorSlug(name) {
             popup += '<br><a href="' + routeUrl + '" target="_blank" rel="noopener" style="font-size:.82rem">' + scheduleLabel + ' →</a>';
           }
 
-          L.geoJSON(feature, {
+          var rec = { geom: feature.geometry, props: feature.properties, lods: [], level: currentLodLevel };
+          rec.layer = L.geoJSON({ type: 'Feature', properties: feature.properties, geometry: routeGeometryAt(rec, currentLodLevel) }, {
             style: { color: color, weight: 3, opacity: .85 }
           }).bindPopup(popup).addTo(routeLayer);
+          rec.lods[2] = rec.lods[2] || (LOD_TOLERANCE[2] <= 0 ? feature.geometry : null);
+          routeFeatures.push(rec);
         });
       })
       .catch(function(err) {
