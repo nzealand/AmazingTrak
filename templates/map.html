@@ -234,15 +234,21 @@ function findCorridorSlug(name) {
   // choice is remembered per browser (try/catch: localStorage can throw).
   var BASEMAP_KEY = 'amazingtrak-basemap';
   var streetsBase = mapTileLayer(L, CARTO_API_KEY);
-  var terrainBase = L.tileLayer(
-    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}',
-    {
-      maxZoom: 19,
-      maxNativeZoom: 13, // Esri's set stops at 13; Leaflet scales the last level above that
-      attribution: 'Tiles &copy; Esri &mdash; Esri, USGS, NOAA'
-    }
-  );
-  var baseLayers = { 'Streets': streetsBase, 'Terrain (no streets)': terrainBase };
+  // Road-free option: Esri's Ocean Base (blue water on a light land colour)
+  // under its Boundaries & Places overlay (country/state borders + place
+  // names, no roads). Esri's land data ends around zoom 10, so beyond that
+  // Leaflet scales the last level.
+  var terrainBase = L.layerGroup([
+    L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 19, maxNativeZoom: 10, attribution: 'Tiles &copy; Esri &mdash; Esri, GEBCO, NOAA, National Geographic, DeLorme, HERE, Geonames.org' }
+    ),
+    L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 19, maxNativeZoom: 14, attribution: '&copy; Esri' }
+    )
+  ]);
+  var baseLayers = { 'Streets': streetsBase, 'Land & water (no streets)': terrainBase };
   var savedBase = null;
   try { savedBase = localStorage.getItem(BASEMAP_KEY); } catch (e) {}
   (baseLayers[savedBase] || streetsBase).addTo(map);
