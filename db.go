@@ -1016,6 +1016,38 @@ func runMigrations(db *sql.DB) error {
 		markMigration(db, 36)
 	}
 
+	// Migration 37: Gold Runner (San Joaquins) per-train schedules, from
+	// goldrunner_schedule.go. Only fills trains that have no schedule rows at
+	// all, so any hand-entered schedule is left untouched; stops are matched by
+	// station code within the corridor, so IDs needn't match across databases.
+	if !migrationApplied(db, 37) {
+		for num, stops := range goldRunnerSchedules {
+			var trainID int64
+			err := db.QueryRow(`SELECT t.id FROM trains t JOIN corridors c ON c.id=t.corridor_id
+				WHERE c.slug='gold-runner' AND t.train_number=?
+				AND NOT EXISTS (SELECT 1 FROM train_stops ts WHERE ts.train_id=t.id)`, num).Scan(&trainID)
+			if err != nil {
+				continue // train missing or already has a schedule
+			}
+			for i, st := range stops {
+				var arr, dep interface{}
+				if st.arr != "" {
+					arr = st.arr
+				}
+				if st.dep != "" {
+					dep = st.dep
+				}
+				if _, err := db.Exec(`INSERT OR IGNORE INTO train_stops (train_id, stop_id, sort_order, scheduled_arrival, scheduled_departure)
+					SELECT ?, s.id, ?, ?, ? FROM stops s JOIN corridors c ON c.id=s.corridor_id
+					WHERE c.slug='gold-runner' AND s.station_code=?`,
+					trainID, (i+1)*10, arr, dep, st.code); err != nil {
+					return err
+				}
+			}
+		}
+		markMigration(db, 37)
+	}
+
 	return nil
 }
 
