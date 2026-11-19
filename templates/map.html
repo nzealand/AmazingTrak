@@ -320,7 +320,7 @@ function findCorridorSlug(name) {
     return geom;
   }
 
-  var routeFeatures = [];   // { layer, geom, lods: [coarse, medium, full], level }
+  var routeFeatures = [];   // { layer, poly, simple, geom, props, lods: [coarse, medium, full], latlngs: [...], level }
   var currentLodLevel = lodLevel(map.getZoom());
 
   function routeGeometryAt(rec, level) {
@@ -328,16 +328,72 @@ function findCorridorSlug(name) {
     return rec.lods[level];
   }
 
+  // Leaflet-ready latlngs for a level, built once and cached (so a level
+  // switch is just setLatLngs on the existing polyline, no GeoJSON re-parse).
+  function routeLatLngsAt(rec, level) {
+    if (!rec.latlngs[level]) {
+      var g = routeGeometryAt(rec, level);
+      rec.latlngs[level] = L.GeoJSON.coordsToLatLngs(g.coordinates, g.type === 'MultiLineString' ? 1 : 0);
+    }
+    return rec.latlngs[level];
+  }
+
+  function setRouteLevel(rec, level) {
+    rec.level = level;
+    if (rec.poly && rec.simple) {
+      rec.poly.setLatLngs(routeLatLngsAt(rec, level));
+    } else {
+      rec.layer.clearLayers();
+      rec.layer.addData({ type: 'Feature', properties: rec.props, geometry: routeGeometryAt(rec, level) });
+    }
+  }
+
+  // Switch routes to the current level in ~8ms slices across animation
+  // frames, so crossing a level never blocks the main thread in one long task.
+  var lodPumpScheduled = false;
+  function pumpRouteLod() {
+    lodPumpScheduled = false;
+    var start = performance.now();
+    for (var i = 0; i < routeFeatures.length; i++) {
+      var rec = routeFeatures[i];
+      if (rec.level === currentLodLevel) continue;
+      setRouteLevel(rec, currentLodLevel);
+      if (performance.now() - start > 8) break;
+    }
+    if (routeFeatures.some(function(r) { return r.level !== currentLodLevel; })) schedulePump();
+  }
+  function schedulePump() {
+    if (lodPumpScheduled) return;
+    lodPumpScheduled = true;
+    requestAnimationFrame(pumpRouteLod);
+  }
+
   function applyRouteLod() {
     var level = lodLevel(map.getZoom());
     if (level === currentLodLevel) return;
     currentLodLevel = level;
+    schedulePump();
+  }
+
+  // Once routes have loaded, build the other levels' geometry in idle time so
+  // the first switch to each has nothing left to compute.
+  function precomputeRouteLods() {
+    var queue = [];
     routeFeatures.forEach(function(rec) {
-      if (rec.level === level) return;
-      rec.level = level;
-      rec.layer.clearLayers();
-      rec.layer.addData({ type: 'Feature', properties: rec.props, geometry: routeGeometryAt(rec, level) });
+      if (!rec.simple) return;
+      for (var lv = 0; lv < 3; lv++) if (lv !== rec.level) queue.push([rec, lv]);
     });
+    var idle = window.requestIdleCallback || function(cb) {
+      return setTimeout(function() { cb({ timeRemaining: function() { return 6; } }); }, 60);
+    };
+    function work(deadline) {
+      while (queue.length && deadline.timeRemaining() > 2) {
+        var job = queue.shift();
+        routeLatLngsAt(job[0], job[1]);
+      }
+      if (queue.length) idle(work);
+    }
+    idle(work);
   }
   map.on('zoomend', applyRouteLod);
 
@@ -371,11 +427,13 @@ function findCorridorSlug(name) {
             popup += '<br><a href="' + routeUrl + '" target="_blank" rel="noopener" style="font-size:.82rem">' + scheduleLabel + ' →</a>';
           }
 
-          var rec = { geom: feature.geometry, props: feature.properties, lods: [], level: currentLodLevel };
+          var rec = { geom: feature.geometry, props: feature.properties, lods: [], latlngs: [], level: currentLodLevel };
           rec.layer = L.geoJSON({ type: 'Feature', properties: feature.properties, geometry: routeGeometryAt(rec, currentLodLevel) }, {
             style: { color: color, weight: 3, opacity: .85 }
           }).bindPopup(popup).addTo(routeLayer);
-          rec.lods[2] = rec.lods[2] || (LOD_TOLERANCE[2] <= 0 ? feature.geometry : null);
+          var gt = feature.geometry && feature.geometry.type;
+          rec.poly = rec.layer.getLayers()[0];
+          rec.simple = (gt === 'LineString' || gt === 'MultiLineString') && rec.layer.getLayers().length === 1;
           routeFeatures.push(rec);
         });
       })
@@ -400,6 +458,7 @@ function findCorridorSlug(name) {
     loadRouteSource('/api/via-routes', 'VIA Rail schedule')
   ]).then(function() {
     loading.style.display = 'none';
+    precomputeRouteLods();
     var countEl = document.getElementById('map-route-count');
     if (countEl) countEl.textContent = totalRouteCount + ' routes';
   });
