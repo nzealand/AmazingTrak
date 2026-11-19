@@ -153,6 +153,8 @@ var routeAliases = map[string]string{
 	"lincolnriverrunner":  "lincolnmissouririverrunner",
 	"illini":              "illinisaluki",
 	"saluki":              "illinisaluki",
+	"sanjoaquins":         "goldrunner", // San Joaquins was renamed Gold Runner; upstream still uses the old name
+	"sanjoaquin":          "goldrunner",
 }
 
 // loadDBTrains indexes our trains by train number. A number is unique within a
